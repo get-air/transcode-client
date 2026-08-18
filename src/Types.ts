@@ -12,6 +12,7 @@ export interface TranscodeSource {
 export interface TranscodeOutputOptions {
   readonly transmux?: boolean
   readonly force_transcode?: boolean
+  readonly video_enabled?: boolean
   readonly max_width?: number
   readonly max_height?: number
   readonly video_track_index?: number
@@ -29,8 +30,8 @@ export interface ExternalSubtitleRequest {
 }
 
 export interface CreateSessionRequest {
-  readonly source: TranscodeSource
-  readonly relay_only?: boolean
+  readonly source?: TranscodeSource
+  readonly source_id?: string
   readonly output?: TranscodeOutputOptions
   readonly subtitles?: readonly ExternalSubtitleRequest[]
 }
@@ -68,11 +69,28 @@ export interface Rendition {
 
 export interface TranscodeSession {
   readonly id: string
+  readonly source_id: string
   readonly duration_ns: number
   readonly seekable: boolean
   readonly tracks: readonly MediaTrack[]
   readonly renditions: readonly Rendition[]
   readonly master_url: string
+}
+
+export interface WarmAudioResult {
+  readonly sequence: number
+  readonly elapsed_ms: number
+}
+
+export interface RegisteredSource {
+  readonly id: string
+  readonly media: {
+    readonly duration_ns: number
+    readonly seekable: boolean
+    readonly container: string | null
+    readonly tracks: readonly MediaTrack[]
+  }
+  readonly relay_url: string
 }
 
 export interface EncoderCandidate {
@@ -92,6 +110,26 @@ export interface TranscodeCapabilities {
   readonly subtitle_output: string
   readonly h264_encoders: readonly EncoderCandidate[]
   readonly aac_encoders: readonly EncoderCandidate[]
+}
+
+export interface TranscodeMetrics {
+  readonly active_pipelines: number
+  readonly peak_active_pipelines: number
+  readonly generated_segments: number
+  readonly cache_hits: number
+  readonly failed_pipelines: number
+  readonly transmux_segments: number
+  readonly transcode_segments: number
+  readonly subtitle_segments: number
+  readonly cancelled_pipelines: number
+  readonly pipeline_queue_wait_ms: number
+  readonly source_registrations: number
+  readonly deduplicated_source_registrations: number
+  readonly resolver_requests: number
+  readonly relay_requests: number
+  readonly cdn_range_requests: number
+  readonly source_rate_limited: number
+  readonly source_refreshes: number
 }
 
 export interface TranscodeClientOptions {

@@ -24,10 +24,14 @@ video { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; }
 .track-controls { display: flex; flex-wrap: wrap; gap: 12px; padding: 14px 16px 16px; background: #0d1218; border-top: 1px solid #27313c; }
 .track-controls label { flex: 1 1 280px; min-width: 0; }
 .track-controls select { min-height: 42px; }
+.seek-field { display: flex; flex: 1 1 320px; gap: 10px; align-items: end; }
+.seek-field label { flex: 1; }
+.seek-field button { min-height: 42px; }
 #status { min-height: 22px; color: #aeb8c3; font: 13px ui-monospace, monospace; }
+#diagnostics { margin: 8px 0 0; padding: 12px; overflow-wrap: anywhere; white-space: pre-wrap; color: #8fe8f0; background: #0d1218; border: 1px solid #27313c; border-radius: 7px; font: 12px/1.5 ui-monospace, monospace; }
 @media (max-width: 760px) {
   main { width: 100%; padding-top: 20px; }
-  .topbar, form, #status { margin-inline: 16px; }
+  .topbar, form, #status, #diagnostics { margin-inline: 16px; }
   form { grid-template-columns: 1fr; }
   .player-shell { margin-top: 18px; }
 }

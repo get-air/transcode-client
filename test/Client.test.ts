@@ -13,6 +13,7 @@ import { makeTranscodeClient } from "../src/effect.js"
 
 const session = {
   id: "6a22f5cf-823a-40ee-85d3-f656b63f4c85",
+  source_id: "b30b2687-981f-4531-a0c7-ee96780bf088",
   duration_ns: 7_200_000_000_000,
   seekable: true,
   tracks: [{
@@ -67,6 +68,48 @@ const json = (value: unknown, init: ResponseInit = {}): Response =>
   })
 
 describe("transcode client", () => {
+  it("registers one reusable source and exposes its relay URL", async () => {
+    const requests: Request[] = []
+    const registered = {
+      id: session.source_id,
+      media: {
+        duration_ns: session.duration_ns,
+        seekable: true,
+        container: "matroska",
+        tracks: session.tracks,
+      },
+      relay_url: `/v1/sources/${session.source_id}/relay`,
+    }
+    const transport = FunctionHttpTransport.from(async (request) => {
+      requests.push(request)
+      if (request.method === "DELETE") return new Response(null, { status: 204 })
+      return json(registered)
+    })
+    const client = await TranscodeClient.connect({ origin: "http://127.0.0.1:11471", transport })
+    const source = await client.registerSource({ url: "https://media.example/movie.mkv" })
+    expect(client.relayUrl(source)).toBe(
+      `http://127.0.0.1:11471/v1/sources/${session.source_id}/relay`,
+    )
+    await client.releaseSource(source.id)
+    expect(requests.map((request) => request.method)).toEqual(["POST", "DELETE"])
+  })
+
+  it("maps server rate limits to a typed non-retrying error", async () => {
+    const transport = FunctionHttpTransport.from(async () => json({
+      error: {
+        code: "rate_limited",
+        message: "source is rate limited",
+        retry_after_seconds: 42,
+      },
+    }, { status: 429 }))
+    const client = await TranscodeClient.connect({ origin: "http://localhost:11471", transport })
+    await expect(client.registerSource({ url: "https://media.example/movie.mkv" }))
+      .rejects.toMatchObject({
+        _tag: "SourceRateLimitedError",
+        retryAfterSeconds: 42,
+      })
+  })
+
   it("creates sessions and resolves browser-facing master URLs through Promises", async () => {
     const requests: Request[] = []
     const transport = FunctionHttpTransport.from(async (request) => {

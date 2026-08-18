@@ -26,6 +26,15 @@ export class TranscodeHttpStatusError extends Schema.TaggedError<TranscodeHttpSt
   },
 ) {}
 
+export class SourceRateLimitedError extends Schema.TaggedError<SourceRateLimitedError>()(
+  "SourceRateLimitedError",
+  {
+    url: Schema.String,
+    message: Schema.String,
+    retryAfterSeconds: Schema.optional(Schema.Number),
+  },
+) {}
+
 export class TranscodeInvalidJsonError extends Schema.TaggedError<TranscodeInvalidJsonError>()(
   "TranscodeInvalidJsonError",
   { url: Schema.String, message: Schema.String },
@@ -41,5 +50,6 @@ export type TranscodeClientError =
   | TranscodeTransportError
   | TranscodeTimeoutError
   | TranscodeHttpStatusError
+  | SourceRateLimitedError
   | TranscodeInvalidJsonError
   | TranscodeResponseValidationError

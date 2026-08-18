@@ -23,9 +23,11 @@ import {
 } from "./Capabilities.js"
 import type {
   CreateSessionRequest,
+  RegisteredSource,
   TranscodeCallOptions,
   TranscodeOutputOptions,
   TranscodeSession,
+  TranscodeSource,
   VideoCodec,
 } from "./Types.js"
 
@@ -33,6 +35,7 @@ const HLS_MIME = "application/vnd.apple.mpegurl"
 
 export interface TranscodeVideoBackendOptions {
   readonly client: TranscodeSessionClient
+  readonly relay?: TranscodeRelayHttpTransport
   readonly output?: TranscodeOutputOptions
   readonly startupTimeoutMillis?: number
   readonly videoCodecs?: readonly VideoCodec[]
@@ -41,16 +44,22 @@ export interface TranscodeVideoBackendOptions {
 }
 
 export interface TranscodeSessionClient {
+  readonly origin: string
+  registerSource(source: TranscodeSource, options?: TranscodeCallOptions): Promise<RegisteredSource>
+  releaseSource(id: string, options?: TranscodeCallOptions): Promise<void>
+  relayUrl(source: Pick<RegisteredSource, "relay_url">): string
   createSession(
     request: CreateSessionRequest,
     options?: TranscodeCallOptions,
   ): Promise<TranscodeSession>
   deleteSession(id: string, options?: TranscodeCallOptions): Promise<void>
+  warmAudio(id: string, positionSeconds: number, options?: TranscodeCallOptions): Promise<unknown>
   masterUrl(session: Pick<TranscodeSession, "master_url">): string
 }
 
-export interface TranscodeRelayClient extends TranscodeSessionClient {
-  readonly origin: string
+export interface TranscodeRelayHttpTransport extends HttpTransport {
+  register(source: TranscodeSource, options?: TranscodeCallOptions): Promise<RegisteredSource>
+  release(id: string, options?: TranscodeCallOptions): Promise<void>
 }
 
 /**
@@ -59,33 +68,52 @@ export interface TranscodeRelayClient extends TranscodeSessionClient {
  * every relay request, including Tauri transports.
  */
 export function transcodeRelayHttpTransport(
-  client: TranscodeRelayClient,
+  client: TranscodeSessionClient,
   local: HttpTransport = { fetch: (request) => globalThis.fetch(request) },
-): HttpTransport {
-  const relays = new Map<string, Promise<string>>()
+): TranscodeRelayHttpTransport {
+  const sources = new Map<string, Promise<RegisteredSource>>()
+  const register = (
+    source: TranscodeSource,
+    options: TranscodeCallOptions = {},
+  ): Promise<RegisteredSource> => {
+    const headers = new Headers(source.headers)
+    const key = JSON.stringify([source.url, [...headers].sort()])
+    let registered = sources.get(key)
+    if (!registered) {
+      registered = client.registerSource({
+        url: source.url,
+        ...([...headers].length === 0 ? {} : { headers: Object.fromEntries(headers) }),
+      }, options)
+      sources.set(key, registered)
+    }
+    return registered
+  }
   return {
+    register,
+    release: (id, options) => client.releaseSource(id, options),
     fetch: async (request) => {
       const sourceHeaders = new Headers(request.headers)
-      sourceHeaders.delete("range")
-      sourceHeaders.delete("if-range")
-      const key = JSON.stringify([request.url, [...sourceHeaders].sort()])
-      let relay = relays.get(key)
-      if (!relay) {
-        relay = client.createSession({
-          source: { url: request.url, headers: Object.fromEntries(sourceHeaders) },
-          relay_only: true,
-        }).then((session) => new URL(
-          `/v1/sessions/${encodeURIComponent(session.id)}/source`,
-          client.origin,
-        ).toString())
-        relays.set(key, relay)
-      }
+      for (const transient of [
+        "range",
+        "if-range",
+        "accept",
+        "cache-control",
+        "pragma",
+        "origin",
+        "sec-fetch-dest",
+        "sec-fetch-mode",
+        "sec-fetch-site",
+      ]) sourceHeaders.delete(transient)
+      const source = await register({
+        url: request.url,
+        ...([...sourceHeaders].length === 0 ? {} : { headers: Object.fromEntries(sourceHeaders) }),
+      }, { signal: request.signal })
       const relayHeaders = new Headers()
       for (const name of ["range", "if-range"] as const) {
         const value = request.headers.get(name)
         if (value !== null) relayHeaders.set(name, value)
       }
-      return local.fetch(new Request(await relay, {
+      return local.fetch(new Request(client.relayUrl(source), {
         method: request.method,
         headers: relayHeaders,
         signal: request.signal,
@@ -105,11 +133,16 @@ export function transcodeVideoBackend(defaults: TranscodeVideoBackendOptions): V
       const detected = await detectVideoCapabilities()
       const videoCodecs = defaults.videoCodecs ?? detected.videoCodecs
       const headers = sourceHeaders(source)
+      const sourceRequest = {
+        url: source.uri,
+        ...(headers === undefined ? {} : { headers }),
+      }
+      const registered = await (defaults.relay?.register(sourceRequest,
+        options.signal === undefined ? {} : { signal: options.signal })
+        ?? defaults.client.registerSource(sourceRequest,
+          options.signal === undefined ? {} : { signal: options.signal }))
       const request: CreateSessionRequest = {
-        source: {
-          url: source.uri,
-          ...(headers === undefined ? {} : { headers }),
-        },
+        source_id: registered.id,
         output: {
           ...defaults.output,
           max_width: defaults.output?.max_width ?? detected.maxWidth,
@@ -123,17 +156,18 @@ export function transcodeVideoBackend(defaults: TranscodeVideoBackendOptions): V
       try {
         session = await defaults.client.createSession(request, callOptions)
       } catch {
-        return openHybridController(element, request, defaults, options)
+        return openHybridController(element, registered, request, defaults, options)
       }
       const controller = new TranscodeHlsController(element, session, defaults.client,
         defaults.startupTimeoutMillis ?? 30_000, defaults.preferNativeHls ?? true)
       try {
         await controller.start(defaults.client.masterUrl(session), options)
+        controller.adoptSource()
         return controller
       } catch (cause) {
         await controller.destroy().catch(() => undefined)
         try {
-          return await openHybridController(element, request, defaults, options)
+          return await openHybridController(element, registered, request, defaults, options)
         } catch {
           throw cause
         }
@@ -142,23 +176,50 @@ export function transcodeVideoBackend(defaults: TranscodeVideoBackendOptions): V
   }
 }
 
+/** Explicit native-video plus GStreamer-audio adapter for qualification and overrides. */
+export function hybridVideoBackend(defaults: TranscodeVideoBackendOptions): VideoBackendAdapter {
+  return {
+    id: "hybrid",
+    isAvailable: () => true,
+    open: async ({ element, options }) => {
+      const source = normalizeSource(options.source)
+      const headers = sourceHeaders(source)
+      const sourceRequest = {
+        url: source.uri,
+        ...(headers === undefined ? {} : { headers }),
+      }
+      const registered = await (defaults.relay?.register(sourceRequest,
+        options.signal === undefined ? {} : { signal: options.signal })
+        ?? defaults.client.registerSource(sourceRequest,
+          options.signal === undefined ? {} : { signal: options.signal }))
+      return openHybridController(
+        element,
+        registered,
+        {
+          source_id: registered.id,
+          ...(defaults.output === undefined ? {} : { output: defaults.output }),
+        },
+        defaults,
+        options,
+      )
+    },
+  }
+}
+
 async function openHybridController(
   element: HTMLVideoElement,
+  registered: RegisteredSource,
   request: CreateSessionRequest,
   defaults: TranscodeVideoBackendOptions,
   options: AttachVideoOptions,
 ): Promise<BackendVideoController> {
   const session = await defaults.client.createSession({
-    source: request.source,
-    relay_only: true,
+    source_id: registered.id,
+    output: { ...request.output, video_enabled: false },
   }, options.signal === undefined ? {} : { signal: options.signal })
-  const relaySource = new URL(
-    `/v1/sessions/${encodeURIComponent(session.id)}/source`,
-    defaults.client.masterUrl(session),
-  ).toString()
   const controller = new HybridVideoController(
     element,
-    relaySource,
+    defaults.client.relayUrl(registered),
     session,
     defaults.client,
     defaults.startupTimeoutMillis ?? 30_000,
@@ -182,6 +243,9 @@ class HybridVideoController extends EventTarget implements BackendVideoControlle
   #playing = false
   #destroyed = false
   #unsubscribers: Array<() => void> = []
+  #lastSwitchLatencyMillis = 0
+  #lastSeekLatencyMillis = 0
+  #programmaticSeek = false
 
   constructor(
     readonly element: HTMLVideoElement,
@@ -245,13 +309,14 @@ class HybridVideoController extends EventTarget implements BackendVideoControlle
     this.element.src = this.source
     this.element.load()
     await waitForMedia(this.element, this.startupTimeoutMillis, options.signal)
-    const selected = this.session.renditions.find((track) =>
-      track.kind === "audio" && track.default)
-      ?? this.session.renditions.find((track) => track.kind === "audio")
-    if (!selected) throw new Error("Hybrid playback requires an audio track")
-    await this.#loadAudio(selected.source_track_index, options.signal)
+    if (!this.session.renditions.some((track) => track.kind === "audio")) {
+      throw new Error("Hybrid playback requires an audio track")
+    }
+    await this.client.warmAudio(this.session.id, this.element.currentTime,
+      options.signal === undefined ? {} : { signal: options.signal })
+    await this.#startAudioMaster(options.signal)
     this.#listen(this.element, "timeupdate", () => {
-      if (Math.abs(this.#audio.currentTime - this.element.currentTime) > 0.35) {
+      if (Math.abs(this.#audio.currentTime - this.element.currentTime) > 0.25) {
         this.#audio.currentTime = this.element.currentTime
       }
       this.dispatchEvent(new CustomEvent("timeupdate", {
@@ -261,6 +326,10 @@ class HybridVideoController extends EventTarget implements BackendVideoControlle
     this.#listen(this.element, "progress", () => this.dispatchEvent(new CustomEvent(
       "bufferprogress", { detail: { bufferedAhead: this.bufferedAhead() } },
     )))
+    this.#listen(this.element, "seeking", () => {
+      if (this.#programmaticSeek) return
+      void this.#syncNativeSeek(this.element.currentTime)
+    })
     if (options.autoplay) await this.play()
   }
 
@@ -271,19 +340,43 @@ class HybridVideoController extends EventTarget implements BackendVideoControlle
   }
   pause(): void { this.#playing = false; this.element.pause(); this.#audio.pause() }
   async seek(positionSeconds: number): Promise<void> {
+    const started = performance.now()
     const target = Math.max(0, positionSeconds)
-    this.element.currentTime = target
-    this.#audio.currentTime = target
+    const resume = this.#playing
+    this.#programmaticSeek = true
+    try {
+      this.element.pause()
+      this.#audio.pause()
+      await this.client.warmAudio(this.session.id, target)
+      this.element.currentTime = target
+      this.#audio.currentTime = target
+      await Promise.all([
+        waitForPosition(this.element, target, 3_000),
+        waitForPosition(this.#audio, target, 3_000),
+      ])
+      if (resume) await Promise.all([this.element.play(), this.#audio.play()])
+      this.#lastSeekLatencyMillis = performance.now() - started
+    } finally {
+      this.#programmaticSeek = false
+    }
   }
   async selectTrack(kind: TrackKind, trackId?: string): Promise<void> {
     if (kind !== "audio" || !trackId) throw new Error(`Hybrid ${kind} selection is unavailable`)
     const track = this.tracks.find((candidate) => candidate.kind === kind && candidate.id === trackId)
     if (!track) throw new Error(`Unknown audio track: ${trackId}`)
-    const resume = this.#playing
-    this.#audio.pause()
-    await this.#loadAudio(track.streamIndex)
-    this.#audio.currentTime = this.element.currentTime
-    if (resume) await this.#audio.play()
+    const hls = this.#hls
+    if (!hls) throw new Error("Hybrid audio master is unavailable")
+    const renditions = this.session.renditions.filter((rendition) => rendition.kind === "audio")
+    const selected = renditions.findIndex((rendition) => rendition.source_track_index === track.streamIndex)
+    if (selected < 0) throw new Error(`Unknown audio track: ${trackId}`)
+    const started = performance.now()
+    if (hls.audioTrack !== selected) {
+      const HlsConstructor = (await import("hls.js")).default
+      const switched = waitForAudioTrack(hls, HlsConstructor, selected, 2_000)
+      hls.audioTrack = selected
+      await switched
+    }
+    this.#lastSwitchLatencyMillis = performance.now() - started
     for (const candidate of this.tracks) {
       if (candidate.kind === "audio") candidate.selected = candidate.id === trackId
     }
@@ -305,18 +398,24 @@ class HybridVideoController extends EventTarget implements BackendVideoControlle
     const quality = this.playbackQuality()
     const videoCodec = this.tracks.find((track) => track.kind === "video")?.codec
     const audioCodec = this.tracks.find((track) => track.kind === "audio" && track.selected)?.codec
-    return {
+    const stats = {
       sessionId: this.sessionId,
+      sourceId: this.session.source_id,
+      playbackMode: "hybrid",
       encodedBytesBuffered: 0,
       bufferedAheadSeconds: this.bufferedAhead(),
       ...(videoCodec === undefined ? {} : { videoCodec }),
       ...(audioCodec === undefined ? {} : { audioCodec }),
+      switchLatencyMillis: this.#lastSwitchLatencyMillis,
+      seekLatencyMillis: this.#lastSeekLatencyMillis,
+      avDriftMillis: Math.abs(this.#audio.currentTime - this.element.currentTime) * 1_000,
       hardwareBackend: "platform+gstreamer",
       decodedFrameCopies: 0,
       droppedFrames: quality.droppedVideoFrames,
       visible: !this.element.hidden,
       playing: this.#playing,
     }
+    return stats
   }
   bufferedAhead(): number {
     const current = this.element.currentTime
@@ -345,6 +444,7 @@ class HybridVideoController extends EventTarget implements BackendVideoControlle
     this.element.pause(); this.#audio.pause(); this.#audio.remove()
     this.element.muted = false; this.element.removeAttribute("src"); this.element.load()
     await this.client.deleteSession(this.session.id).catch(() => undefined)
+    await this.client.releaseSource(this.session.source_id).catch(() => undefined)
   }
   on<K extends keyof VideoControllerEventMap>(type: K,
     listener: (event: VideoControllerEventMap[K]) => void,
@@ -353,14 +453,11 @@ class HybridVideoController extends EventTarget implements BackendVideoControlle
     this.addEventListener(type, eventListener, options)
     return () => this.removeEventListener(type, eventListener, options)
   }
-  async #loadAudio(trackIndex: number, signal?: AbortSignal): Promise<void> {
-    this.#hls?.destroy()
+  async #startAudioMaster(signal?: AbortSignal): Promise<void> {
     const module = await import("hls.js")
     const HlsConstructor = module.default
     const hls = new HlsConstructor({ enableWorker: true })
     this.#hls = hls
-    const master = new URL(this.client.masterUrl(this.session))
-    const playlist = new URL(`audio/${trackIndex}/playlist.m3u8`, master).toString()
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => finish(new Error("Hybrid audio startup timed out")),
         this.startupTimeoutMillis)
@@ -377,7 +474,7 @@ class HybridVideoController extends EventTarget implements BackendVideoControlle
       signal?.addEventListener("abort", () => finish(signal.reason), { once: true })
       hls.on(HlsConstructor.Events.MANIFEST_PARSED, parsed)
       hls.on(HlsConstructor.Events.ERROR, failed)
-      hls.loadSource(playlist)
+      hls.loadSource(this.client.masterUrl(this.session))
       hls.attachMedia(this.#audio)
     })
   }
@@ -385,6 +482,84 @@ class HybridVideoController extends EventTarget implements BackendVideoControlle
     target.addEventListener(type, listener)
     this.#unsubscribers.push(() => target.removeEventListener(type, listener))
   }
+  async #syncNativeSeek(target: number): Promise<void> {
+    const started = performance.now()
+    const resume = this.#playing
+    try {
+      this.element.pause()
+      this.#audio.pause()
+      await this.client.warmAudio(this.session.id, target)
+      this.element.currentTime = target
+      this.#audio.currentTime = target
+      await Promise.all([
+        waitForPosition(this.element, target, 3_000),
+        waitForPosition(this.#audio, target, 3_000),
+      ])
+      if (resume) await Promise.all([this.element.play(), this.#audio.play()])
+      this.#lastSeekLatencyMillis = performance.now() - started
+    } catch (cause) {
+      this.dispatchEvent(new CustomEvent("error", {
+        detail: {
+          code: "hybrid_seek_latency",
+          message: cause instanceof Error ? cause.message : String(cause),
+        },
+      }))
+    }
+  }
+}
+
+async function waitForAudioTrack(
+  hls: Hls,
+  HlsConstructor: typeof import("hls.js").default,
+  selected: number,
+  timeoutMillis: number,
+): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => finish(new Error(
+      `Audio-track switch exceeded ${timeoutMillis}ms latency gate`,
+    )), timeoutMillis)
+    const switched = (_event: unknown, data: { id: number }) => {
+      if (data.id === selected) finish()
+    }
+    const finish = (failure?: unknown) => {
+      clearTimeout(timer)
+      hls.off(HlsConstructor.Events.AUDIO_TRACK_SWITCHED, switched)
+      failure === undefined ? resolve() : reject(failure)
+    }
+    hls.on(HlsConstructor.Events.AUDIO_TRACK_SWITCHED, switched)
+  })
+}
+
+async function waitForPosition(
+  media: HTMLMediaElement,
+  target: number,
+  timeoutMillis: number,
+): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const started = performance.now()
+    const ready = () => {
+      const elapsedSeconds = (performance.now() - started) / 1_000
+      const playbackAdvance = media.paused ? 0 : elapsedSeconds * Math.abs(media.playbackRate)
+      return Math.abs(media.currentTime - target) <= 0.5 + playbackAdvance
+        && !media.seeking
+        && media.readyState >= 2
+    }
+    if (ready()) { resolve(); return }
+    const timer = setTimeout(() => finish(new Error(
+      `Seek exceeded ${timeoutMillis}ms latency gate`,
+    )), timeoutMillis)
+    const update = () => { if (ready()) finish() }
+    const finish = (failure?: unknown) => {
+      clearTimeout(timer)
+      media.removeEventListener("seeked", update)
+      media.removeEventListener("timeupdate", update)
+      media.removeEventListener("canplay", update)
+      failure === undefined ? resolve() : reject(failure)
+    }
+    media.addEventListener("seeked", update)
+    media.addEventListener("timeupdate", update)
+    media.addEventListener("canplay", update)
+  })
 }
 
 class TranscodeHlsController extends EventTarget implements BackendVideoController {
@@ -397,6 +572,7 @@ class TranscodeHlsController extends EventTarget implements BackendVideoControll
   #playing = false
   #lastHlsRecovery = 0
   #unsubscribers: Array<() => void> = []
+  #ownsSource = false
 
   constructor(
     readonly element: HTMLVideoElement,
@@ -446,6 +622,8 @@ class TranscodeHlsController extends EventTarget implements BackendVideoControll
     if (options.autoplay) await this.play()
   }
 
+  adoptSource(): void { this.#ownsSource = true }
+
   async play(): Promise<void> { await this.element.play() }
   pause(): void { this.element.pause() }
   async seek(positionSeconds: number): Promise<void> {
@@ -482,8 +660,10 @@ class TranscodeHlsController extends EventTarget implements BackendVideoControll
     const quality = this.playbackQuality()
     const videoCodec = this.tracks.find((track) => track.kind === "video")?.codec
     const audioCodec = this.tracks.find((track) => track.kind === "audio")?.codec
-    return {
+    const stats = {
       sessionId: this.sessionId,
+      sourceId: this.session.source_id,
+      playbackMode: "transcode",
       encodedBytesBuffered: 0,
       bufferedAheadSeconds: this.bufferedAhead(),
       ...(videoCodec === undefined ? {} : { videoCodec }),
@@ -494,6 +674,7 @@ class TranscodeHlsController extends EventTarget implements BackendVideoControll
       visible: !this.element.hidden,
       playing: this.#playing,
     }
+    return stats
   }
   bufferedAhead(): number {
     const current = this.element.currentTime
@@ -530,6 +711,9 @@ class TranscodeHlsController extends EventTarget implements BackendVideoControll
     this.element.removeAttribute("src")
     this.element.load()
     await this.client.deleteSession(this.session.id).catch(() => undefined)
+    if (this.#ownsSource) {
+      await this.client.releaseSource(this.session.source_id).catch(() => undefined)
+    }
   }
 
   on<K extends keyof VideoControllerEventMap>(

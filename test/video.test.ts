@@ -12,6 +12,7 @@ import {
 
 const session: TranscodeSession = {
   id: "6a22f5cf-823a-40ee-85d3-f656b63f4c85",
+  source_id: "b30b2687-981f-4531-a0c7-ee96780bf088",
   duration_ns: 8_000_000_000,
   seekable: true,
   tracks: [],
@@ -34,33 +35,46 @@ const session: TranscodeSession = {
 
 describe("transcode video backend", () => {
   it("relays range requests through a source-only session", async () => {
-    const createSession = vi.fn(async () => session)
+    const registerSource = vi.fn(async () => ({
+      id: session.source_id,
+      media: { duration_ns: 8_000_000_000, seekable: true, container: "matroska", tracks: [] },
+      relay_url: `/v1/sources/${session.source_id}/relay`,
+    }))
     const fetch = vi.fn(async (_request: Request) => new Response("range", {
       status: 206,
       headers: { "content-range": "bytes 10-14/100" },
     }))
     const transport = transcodeRelayHttpTransport({
       origin: "http://127.0.0.1:11472",
-      createSession,
+      registerSource,
+      releaseSource: vi.fn(async () => undefined),
+      relayUrl: (source) => new URL(source.relay_url, "http://127.0.0.1:11472").toString(),
+      createSession: vi.fn(async () => session),
       deleteSession: vi.fn(async () => undefined),
+      warmAudio: vi.fn(async () => ({ sequence: 1, elapsed_ms: 0 })),
       masterUrl: () => "",
     }, { fetch })
 
+    await transport.register({
+      url: "https://media.example/movie.mkv",
+      headers: { Authorization: "Bearer test" },
+    })
     const response = await transport.fetch(new Request("https://media.example/movie.mkv", {
-      headers: { Authorization: "Bearer test", Range: "bytes=10-14" },
+      headers: { Accept: "video/*", Authorization: "Bearer test", Range: "bytes=10-14" },
+    }))
+    await transport.fetch(new Request("https://media.example/movie.mkv", {
+      headers: { Authorization: "Bearer test", Range: "bytes=20-24" },
     }))
 
     expect(response.status).toBe(206)
-    expect(createSession).toHaveBeenCalledWith({
-      source: {
+    expect(registerSource).toHaveBeenCalledWith({
         url: "https://media.example/movie.mkv",
         headers: { Authorization: "Bearer test" },
-      },
-      relay_only: true,
-    })
+    }, expect.any(Object))
+    expect(registerSource).toHaveBeenCalledTimes(1)
     const relayed = vi.mocked(fetch).mock.calls[0]?.[0]
     expect(relayed?.url).toBe(
-      `http://127.0.0.1:11472/v1/sessions/${session.id}/source`,
+      `http://127.0.0.1:11472/v1/sources/${session.source_id}/relay`,
     )
     expect(relayed?.headers.get("range")).toBe("bytes=10-14")
   })
@@ -77,8 +91,17 @@ describe("transcode video backend", () => {
 
   it("uses native HLS when available and destroys the server session", async () => {
     const client: TranscodeSessionClient = {
+      origin: "http://127.0.0.1:11471",
+      registerSource: vi.fn(async () => ({
+        id: session.source_id,
+        media: { duration_ns: 8_000_000_000, seekable: true, container: "matroska", tracks: [] },
+        relay_url: `/v1/sources/${session.source_id}/relay`,
+      })),
+      releaseSource: vi.fn(async () => undefined),
+      relayUrl: (source) => new URL(source.relay_url, "http://127.0.0.1:11471").toString(),
       createSession: vi.fn(async () => session),
       deleteSession: vi.fn(async () => undefined),
+      warmAudio: vi.fn(async () => ({ sequence: 1, elapsed_ms: 0 })),
       masterUrl: () => "http://127.0.0.1:11471/v1/sessions/id/master.m3u8",
     }
     const video = document.createElement("video")
@@ -98,7 +121,7 @@ describe("transcode video backend", () => {
     })
 
     expect(client.createSession).toHaveBeenCalledWith(expect.objectContaining({
-      source: { url: "https://media.example/movie.mkv" },
+      source_id: session.source_id,
       output: {
         max_width: 1920,
         max_height: 1080,

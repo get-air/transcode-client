@@ -4,10 +4,14 @@ import { makeTranscodeClient, type TranscodeClientShape } from "./Client.js"
 import type { TranscodeClientError } from "./Errors.js"
 import type {
   CreateSessionRequest,
+  RegisteredSource,
+  TranscodeSource,
   TranscodeCallOptions,
   TranscodeCapabilities,
   TranscodeClientOptions,
+  TranscodeMetrics,
   TranscodeSession,
+  WarmAudioResult,
 } from "./Types.js"
 
 export interface PublicTranscodeError extends Error {
@@ -17,6 +21,7 @@ export interface PublicTranscodeError extends Error {
   readonly code?: string
   readonly retryable?: boolean
   readonly timeoutMillis?: number
+  readonly retryAfterSeconds?: number
 }
 
 export const isTranscodeError = (value: unknown): value is PublicTranscodeError =>
@@ -49,6 +54,26 @@ export class TranscodeClient {
     return run(this.client.capabilities(options))
   }
 
+  metrics(options?: TranscodeCallOptions): Promise<TranscodeMetrics> {
+    return run(this.client.metrics(options))
+  }
+
+  registerSource(source: TranscodeSource, options?: TranscodeCallOptions): Promise<RegisteredSource> {
+    return run(this.client.registerSource(source, options))
+  }
+
+  getSource(id: string, options?: TranscodeCallOptions): Promise<RegisteredSource> {
+    return run(this.client.getSource(id, options))
+  }
+
+  releaseSource(id: string, options?: TranscodeCallOptions): Promise<void> {
+    return run(this.client.releaseSource(id, options))
+  }
+
+  relayUrl(source: Pick<RegisteredSource, "relay_url">): string {
+    return this.client.relayUrl(source)
+  }
+
   createSession(
     request: CreateSessionRequest,
     options?: TranscodeCallOptions,
@@ -62,6 +87,14 @@ export class TranscodeClient {
 
   deleteSession(id: string, options?: TranscodeCallOptions): Promise<void> {
     return run(this.client.deleteSession(id, options))
+  }
+
+  warmAudio(
+    id: string,
+    positionSeconds: number,
+    options?: TranscodeCallOptions,
+  ): Promise<WarmAudioResult> {
+    return run(this.client.warmAudio(id, positionSeconds, options))
   }
 
   masterUrl(session: Pick<TranscodeSession, "master_url">): string {

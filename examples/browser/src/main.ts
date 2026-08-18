@@ -1,5 +1,9 @@
 import { TranscodeClient } from '@get-air/transcode'
-import { transcodeRelayHttpTransport, transcodeVideoBackend } from '@get-air/transcode/video'
+import {
+  hybridVideoBackend,
+  transcodeRelayHttpTransport,
+  transcodeVideoBackend,
+} from '@get-air/transcode/video'
 import {
   createVideoClient,
   type MediaTrack,
@@ -17,15 +21,22 @@ const route = required<HTMLSelectElement>('#route')
 const video = required<HTMLVideoElement>('#video')
 const backend = required<HTMLOutputElement>('#backend')
 const status = required<HTMLElement>('#status')
+const diagnostics = required<HTMLElement>('#diagnostics')
 const submit = required<HTMLButtonElement>('button[type="submit"]')
 const trackControls = required<HTMLElement>('#track-controls')
 const audioTrackField = required<HTMLElement>('#audio-track-field')
 const audioTrack = required<HTMLSelectElement>('#audio-track')
 const subtitleTrackField = required<HTMLElement>('#subtitle-track-field')
 const subtitleTrack = required<HTMLSelectElement>('#subtitle-track')
+const seekField = required<HTMLElement>('#seek-field')
+const seekPosition = required<HTMLInputElement>('#seek-position')
+const seekButton = required<HTMLButtonElement>('#seek-button')
 let controller: VideoController | undefined
 let loadSequence = 0
 let playbackSummary = 'Enter a direct media URL.'
+let transcodeClient: TranscodeClient | undefined
+let diagnosticsTimer: number | undefined
+let activeSourceId: string | undefined
 
 const parameters = new URLSearchParams(location.search)
 source.value = parameters.get('source') ?? ''
@@ -38,6 +49,7 @@ form.addEventListener('submit', (event) => {
 })
 audioTrack.addEventListener('change', () => { void selectTrack('audio', audioTrack) })
 subtitleTrack.addEventListener('change', () => { void selectTrack('subtitle', subtitleTrack) })
+seekButton.addEventListener('click', () => { void seekToPosition() })
 
 async function playSource(): Promise<void> {
   const sequence = ++loadSequence
@@ -46,15 +58,29 @@ async function playSource(): Promise<void> {
   setBusy(true)
   hideTrackControls()
   try {
+    const previousTranscode = transcodeClient
+    const previousSourceId = activeSourceId
     await controller?.destroy()
+    if (previousTranscode && previousSourceId) {
+      await previousTranscode.releaseSource(previousSourceId).catch(() => undefined)
+    }
     controller = undefined
+    activeSourceId = undefined
+    if (diagnosticsTimer !== undefined) window.clearInterval(diagnosticsTimer)
     const transcode = await TranscodeClient.connect({ origin: origin.value })
+    transcodeClient = transcode
+    const relay = transcodeRelayHttpTransport(transcode)
+    activeSourceId = (await relay.register({ url: source.value })).id
     const client = createVideoClient({
-      http: transcodeRelayHttpTransport(transcode),
-      adapters: [transcodeVideoBackend({
-        client: transcode,
-        preferNativeHls: parameters.get('mse') !== '1',
-      })],
+      http: relay,
+      adapters: [
+        hybridVideoBackend({ client: transcode, relay }),
+        transcodeVideoBackend({
+          client: transcode,
+          relay,
+          preferNativeHls: parameters.get('mse') !== '1',
+        }),
+      ],
     })
     controller = await client.attach(video, {
       source: source.value,
@@ -78,6 +104,8 @@ async function playSource(): Promise<void> {
     status.textContent = playbackSummary
     renderTrackControls(controller)
     await controller.play()
+    await updateDiagnostics()
+    diagnosticsTimer = window.setInterval(() => { void updateDiagnostics() }, 1_000)
   } catch (cause) {
     if (sequence !== loadSequence) return
     backend.textContent = 'Failed'
@@ -106,7 +134,61 @@ async function selectTrack(kind: TrackKind, select: HTMLSelectElement): Promise<
     status.textContent = errorDetails(cause)
   } finally {
     select.disabled = false
+    await updateDiagnostics()
   }
+}
+
+async function seekToPosition(): Promise<void> {
+  const active = controller
+  if (!active) return
+  seekButton.disabled = true
+  status.textContent = 'Seeking…'
+  try {
+    await active.seek(Number(seekPosition.value))
+    status.textContent = playbackSummary
+  } catch (cause) {
+    status.textContent = errorDetails(cause)
+  } finally {
+    seekButton.disabled = false
+    await updateDiagnostics()
+  }
+}
+
+async function updateDiagnostics(): Promise<void> {
+  const active = controller
+  const transcode = transcodeClient
+  if (!active || !transcode) {
+    diagnostics.textContent = 'No active session.'
+    return
+  }
+  try {
+    const [baseStats, metrics] = await Promise.all([active.stats(), transcode.metrics()])
+    const stats = baseStats as typeof baseStats & {
+      sourceId?: string
+      playbackMode?: string
+      switchLatencyMillis?: number
+      seekLatencyMillis?: number
+      avDriftMillis?: number
+    }
+    diagnostics.textContent = [
+      `mode=${stats.playbackMode ?? active.capabilities.backend}`,
+      `source=${stats.sourceId ?? activeSourceId ?? 'n/a'}`,
+      `switch_ms=${formatMetric(stats.switchLatencyMillis)}`,
+      `seek_ms=${formatMetric(stats.seekLatencyMillis)}`,
+      `av_drift_ms=${formatMetric(stats.avDriftMillis)}`,
+      `resolver_requests=${metrics.resolver_requests}`,
+      `cdn_ranges=${metrics.cdn_range_requests}`,
+      `pipeline_queue_ms=${metrics.pipeline_queue_wait_ms}`,
+      `failed=${metrics.failed_pipelines}`,
+      `cancelled=${metrics.cancelled_pipelines}`,
+    ].join(' · ')
+  } catch (cause) {
+    diagnostics.textContent = `Diagnostics unavailable: ${errorDetails(cause)}`
+  }
+}
+
+function formatMetric(value: number | undefined): string {
+  return value === undefined ? 'n/a' : value.toFixed(1)
 }
 
 function errorDetails(cause: unknown): string {
@@ -131,6 +213,8 @@ function renderTrackControls(active: VideoController): void {
     true,
   )
   trackControls.hidden = audioTrackField.hidden && subtitleTrackField.hidden
+  seekField.hidden = false
+  trackControls.hidden = false
 }
 
 function renderTrackSelect(
@@ -163,6 +247,7 @@ function hideTrackControls(): void {
   trackControls.hidden = true
   audioTrackField.hidden = true
   subtitleTrackField.hidden = true
+  seekField.hidden = true
 }
 
 function setBusy(busy: boolean): void {

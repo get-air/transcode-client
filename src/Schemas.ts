@@ -38,11 +38,28 @@ export const Rendition = Schema.Struct({
 
 export const TranscodeSession = Schema.Struct({
   id: Schema.UUID,
+  source_id: Schema.UUID,
   duration_ns: Schema.Number,
   seekable: Schema.Boolean,
   tracks: Schema.Array(MediaTrack),
   renditions: Schema.Array(Rendition),
   master_url: Schema.String,
+})
+
+export const RegisteredSource = Schema.Struct({
+  id: Schema.UUID,
+  media: Schema.Struct({
+    duration_ns: Schema.Number,
+    seekable: Schema.Boolean,
+    container: NullableString,
+    tracks: Schema.Array(MediaTrack),
+  }),
+  relay_url: Schema.String,
+})
+
+export const WarmAudioResult = Schema.Struct({
+  sequence: Schema.Number,
+  elapsed_ms: Schema.Number,
 })
 
 export const EncoderCandidate = Schema.Struct({
@@ -62,4 +79,24 @@ export const TranscodeCapabilities = Schema.Struct({
   subtitle_output: Schema.String,
   h264_encoders: Schema.Array(EncoderCandidate),
   aac_encoders: Schema.Array(EncoderCandidate),
+})
+
+export const TranscodeMetrics = Schema.Struct({
+  active_pipelines: Schema.Number,
+  peak_active_pipelines: Schema.Number,
+  generated_segments: Schema.Number,
+  cache_hits: Schema.Number,
+  failed_pipelines: Schema.Number,
+  transmux_segments: Schema.Number,
+  transcode_segments: Schema.Number,
+  subtitle_segments: Schema.Number,
+  cancelled_pipelines: Schema.Number,
+  pipeline_queue_wait_ms: Schema.Number,
+  source_registrations: Schema.Number,
+  deduplicated_source_registrations: Schema.Number,
+  resolver_requests: Schema.Number,
+  relay_requests: Schema.Number,
+  cdn_range_requests: Schema.Number,
+  source_rate_limited: Schema.Number,
+  source_refreshes: Schema.Number,
 })

@@ -5,6 +5,14 @@ service. It creates lazy HLS/CMAF sessions, resolves browser-facing manifest
 URLs, detects browser codec capabilities, and destroys sessions when playback
 finishes.
 
+```ts
+const source = await client.registerSource({ url })
+const session = await client.createSession({ source_id: source.id })
+const relayUrl = client.relayUrl(source)
+// release after dependent sessions are destroyed
+await client.releaseSource(source.id)
+```
+
 The package never runs GStreamer in JavaScript. Tauri applications can embed
 the Rust crate, inject its ephemeral origin, and use this same client.
 
@@ -109,6 +117,11 @@ the video adapter uses a hybrid fallback: the original video remains in the
 native media element while a synchronized hidden HLS element plays the server's
 AAC rendition. Seeking, playback rate, volume, and audio-track changes update
 both timelines.
+The hidden audio element loads one audio-only master for its lifetime; changing
+languages updates hls.js's `audioTrack` instead of rebuilding the player.
+Server-side audio bundles warm every rendition for a requested interval in one
+source pass, keeping alternate-track switches and random seeks inside the demo's
+2-second and 3-second gates.
 
 The qualification fixture has been exercised through both native HLS and
 hls.js: VP9/Opus MKV was converted to H.264 High plus AAC-LC, reached media

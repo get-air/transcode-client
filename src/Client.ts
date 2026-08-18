@@ -9,17 +9,25 @@ import {
   TranscodeResponseValidationError,
   TranscodeTimeoutError,
   TranscodeTransportError,
+  SourceRateLimitedError,
 } from "./Errors.js"
 import {
   TranscodeCapabilities as TranscodeCapabilitiesSchema,
+  TranscodeMetrics as TranscodeMetricsSchema,
   TranscodeSession as TranscodeSessionSchema,
+  RegisteredSource as RegisteredSourceSchema,
+  WarmAudioResult as WarmAudioResultSchema,
 } from "./Schemas.js"
 import type {
   CreateSessionRequest,
+  RegisteredSource,
+  TranscodeSource,
   TranscodeCallOptions,
   TranscodeCapabilities,
   TranscodeClientOptions,
+  TranscodeMetrics,
   TranscodeSession,
+  WarmAudioResult,
 } from "./Types.js"
 
 const DEFAULT_TIMEOUT_MILLIS = 30_000
@@ -33,9 +41,13 @@ interface NormalizedOptions {
   readonly headers: Readonly<Record<string, string>>
 }
 
-const parseErrorPayload = (text: string): { error?: { code?: string; message?: string } } => {
+const parseErrorPayload = (text: string): {
+  error?: { code?: string; message?: string; retry_after_seconds?: number }
+} => {
   try {
-    return JSON.parse(text) as { error?: { code?: string; message?: string } }
+    return JSON.parse(text) as {
+      error?: { code?: string; message?: string; retry_after_seconds?: number }
+    }
   } catch {
     return {}
   }
@@ -44,6 +56,10 @@ const parseErrorPayload = (text: string): { error?: { code?: string; message?: s
 export interface TranscodeClientShape {
   readonly origin: string
   capabilities(options?: TranscodeCallOptions): Effect.Effect<TranscodeCapabilities, TranscodeClientError>
+  metrics(options?: TranscodeCallOptions): Effect.Effect<TranscodeMetrics, TranscodeClientError>
+  registerSource(source: TranscodeSource, options?: TranscodeCallOptions): Effect.Effect<RegisteredSource, TranscodeClientError>
+  getSource(id: string, options?: TranscodeCallOptions): Effect.Effect<RegisteredSource, TranscodeClientError>
+  releaseSource(id: string, options?: TranscodeCallOptions): Effect.Effect<void, TranscodeClientError>
   createSession(
     request: CreateSessionRequest,
     options?: TranscodeCallOptions,
@@ -53,7 +69,9 @@ export interface TranscodeClientShape {
     options?: TranscodeCallOptions,
   ): Effect.Effect<TranscodeSession, TranscodeClientError>
   deleteSession(id: string, options?: TranscodeCallOptions): Effect.Effect<void, TranscodeClientError>
+  warmAudio(id: string, positionSeconds: number, options?: TranscodeCallOptions): Effect.Effect<WarmAudioResult, TranscodeClientError>
   masterUrl(session: Pick<TranscodeSession, "master_url">): string
+  relayUrl(source: Pick<RegisteredSource, "relay_url">): string
 }
 
 const normalizeOptions = Effect.fn("TranscodeClient.normalizeOptions")(
@@ -145,6 +163,15 @@ const requestText = Effect.fn("TranscodeClient.requestText")(
     })
     if (!response.ok) {
       const payload = parseErrorPayload(text)
+      if (response.status === 429 && payload.error?.code === "rate_limited") {
+        return yield* new SourceRateLimitedError({
+          url: url.toString(),
+          message: payload.error.message ?? "Source is rate limited",
+          ...(payload.error.retry_after_seconds === undefined
+            ? {}
+            : { retryAfterSeconds: payload.error.retry_after_seconds }),
+        })
+      }
       return yield* new TranscodeHttpStatusError({
         url: url.toString(),
         status: response.status,
@@ -199,6 +226,42 @@ export const makeTranscodeClient = Effect.fn("TranscodeClient.make")(
         callOptions,
       ),
     )
+    const metrics = Effect.fn("TranscodeClient.metrics")(
+      (callOptions: TranscodeCallOptions = {}) => requestJson(
+        "GET",
+        "/v1/metrics",
+        TranscodeMetricsSchema,
+        undefined,
+        callOptions,
+      ),
+    )
+    const registerSource = Effect.fn("TranscodeClient.registerSource")(
+      (source: TranscodeSource, callOptions: TranscodeCallOptions = {}) => requestJson(
+        "POST",
+        "/v1/sources",
+        RegisteredSourceSchema,
+        source,
+        callOptions,
+      ),
+    )
+    const getSource = Effect.fn("TranscodeClient.getSource")(
+      (id: string, callOptions: TranscodeCallOptions = {}) => requestJson(
+        "GET",
+        `/v1/sources/${encodeURIComponent(id)}`,
+        RegisteredSourceSchema,
+        undefined,
+        callOptions,
+      ),
+    )
+    const releaseSource = Effect.fn("TranscodeClient.releaseSource")(
+      (id: string, callOptions: TranscodeCallOptions = {}) => requestText(
+        options,
+        "DELETE",
+        `/v1/sources/${encodeURIComponent(id)}`,
+        undefined,
+        callOptions,
+      ).pipe(Effect.asVoid),
+    )
     const createSession = Effect.fn("TranscodeClient.createSession")(
       (request: CreateSessionRequest, callOptions: TranscodeCallOptions = {}) => requestJson(
         "POST",
@@ -226,16 +289,33 @@ export const makeTranscodeClient = Effect.fn("TranscodeClient.make")(
         callOptions,
       ).pipe(Effect.asVoid),
     )
+    const warmAudio = Effect.fn("TranscodeClient.warmAudio")(
+      (id: string, positionSeconds: number, callOptions: TranscodeCallOptions = {}) => requestJson(
+        "POST",
+        `/v1/sessions/${encodeURIComponent(id)}/warm-audio`,
+        WarmAudioResultSchema,
+        { position_seconds: positionSeconds },
+        callOptions,
+      ),
+    )
     const masterUrl = (session: Pick<TranscodeSession, "master_url">): string =>
       new URL(session.master_url, options.origin).toString()
+    const relayUrl = (source: Pick<RegisteredSource, "relay_url">): string =>
+      new URL(source.relay_url, options.origin).toString()
 
     return {
       origin: options.origin.origin,
       capabilities,
+      metrics,
+      registerSource,
+      getSource,
+      releaseSource,
       createSession,
       getSession,
       deleteSession,
+      warmAudio,
       masterUrl,
+      relayUrl,
     } satisfies TranscodeClientShape
   },
 )

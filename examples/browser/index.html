@@ -22,6 +22,7 @@
             <option value="html">Force HTML</option>
             <option value="mediabunny">Force MediaBunny</option>
             <option value="transcode">Force Transcode</option>
+            <option value="hybrid">Force Hybrid</option>
           </select>
         </label>
         <label>Transcoder origin <input id="origin" type="url" required value="http://127.0.0.1:11472"></label>
@@ -36,9 +37,16 @@
           <label id="subtitle-track-field" hidden>Subtitles
             <select id="subtitle-track"></select>
           </label>
+          <div id="seek-field" class="seek-field" hidden>
+            <label>Seek position (seconds)
+              <input id="seek-position" type="number" min="0" step="0.1" value="0">
+            </label>
+            <button id="seek-button" type="button">Seek</button>
+          </div>
         </div>
       </section>
       <p id="status" role="status" aria-live="polite">Enter a direct media URL.</p>
+      <pre id="diagnostics" aria-label="Playback diagnostics">No active session.</pre>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>
