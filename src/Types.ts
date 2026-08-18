@@ -18,6 +18,7 @@ export interface TranscodeOutputOptions {
   readonly audio_track_index?: number
   readonly subtitle_track_index?: number
   readonly video_codecs?: readonly VideoCodec[]
+  readonly hdr_formats?: readonly string[]
 }
 
 export interface ExternalSubtitleRequest {
@@ -113,10 +114,15 @@ export interface CodecProbe {
   readonly audioChannels?: string
   readonly audioBitrate?: number
   readonly audioSampleRate?: number
+  readonly hdrFormat?: string
+  readonly colorGamut?: ColorGamut
+  readonly transferFunction?: TransferFunction
+  readonly hdrMetadataType?: HdrMetadataType
 }
 
 export interface CodecSupport {
   readonly contentType: string
+  readonly hdrFormat?: string
   readonly canPlayType: CanPlayTypeResult
   readonly mediaSource: boolean
   readonly supported?: boolean

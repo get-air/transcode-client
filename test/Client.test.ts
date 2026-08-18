@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   declaredVideoCodecs,
+  declaredHdrFormats,
   isTranscodeError,
   TranscodeClient,
 } from "../src/index.js"
@@ -135,5 +136,14 @@ describe("browser capability declarations", () => {
       { contentType: 'video/mp4; codecs="av01"', canPlayType: "maybe", mediaSource: true,
         supported: true, smooth: false, powerEfficient: false },
     ])).toEqual(["h264", "h265"])
+  })
+
+  it("declares HDR only from a supported smooth HDR-specific probe", () => {
+    expect(declaredHdrFormats([
+      { contentType: 'video/mp4; codecs="hvc1"', hdrFormat: "HDR10",
+        canPlayType: "probably", mediaSource: true, supported: true, smooth: true },
+      { contentType: 'video/mp4; codecs="av01"', hdrFormat: "hdr10+",
+        canPlayType: "maybe", mediaSource: true, supported: true, smooth: false },
+    ])).toEqual(["hdr10"])
   })
 })

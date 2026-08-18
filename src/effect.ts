@@ -1,4 +1,4 @@
-export { detectCodecSupport, declaredVideoCodecs } from "./Capabilities.js"
+export { detectCodecSupport, declaredHdrFormats, declaredVideoCodecs } from "./Capabilities.js"
 export { makeTranscodeClient, type TranscodeClientShape } from "./Client.js"
 export * from "./Errors.js"
 export {

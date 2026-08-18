@@ -11,7 +11,12 @@ const codecFamily = (contentType: string): VideoCodec | undefined => {
 /** Advisory browser capability probe; successful playback still requires startup verification. */
 export async function detectCodecSupport(probe: CodecProbe): Promise<CodecSupport> {
   if (typeof document === "undefined") {
-    return { contentType: probe.contentType, canPlayType: "", mediaSource: false }
+    return {
+      contentType: probe.contentType,
+      ...(probe.hdrFormat === undefined ? {} : { hdrFormat: probe.hdrFormat }),
+      canPlayType: "",
+      mediaSource: false,
+    }
   }
   const video = document.createElement("video")
   const canPlayType = video.canPlayType(probe.contentType)
@@ -22,7 +27,12 @@ export async function detectCodecSupport(probe: CodecProbe): Promise<CodecSuppor
     || probe.height === undefined
     || probe.bitrate === undefined
     || probe.framerate === undefined) {
-    return { contentType: probe.contentType, canPlayType, mediaSource }
+    return {
+      contentType: probe.contentType,
+      ...(probe.hdrFormat === undefined ? {} : { hdrFormat: probe.hdrFormat }),
+      canPlayType,
+      mediaSource,
+    }
   }
   try {
     const result = await navigator.mediaCapabilities.decodingInfo({
@@ -33,6 +43,13 @@ export async function detectCodecSupport(probe: CodecProbe): Promise<CodecSuppor
         height: probe.height,
         bitrate: probe.bitrate,
         framerate: probe.framerate,
+        ...(probe.colorGamut === undefined ? {} : { colorGamut: probe.colorGamut }),
+        ...(probe.transferFunction === undefined ? {} : {
+          transferFunction: probe.transferFunction,
+        }),
+        ...(probe.hdrMetadataType === undefined ? {} : {
+          hdrMetadataType: probe.hdrMetadataType,
+        }),
       },
       ...(probe.audioContentType === undefined ? {} : {
         audio: {
@@ -45,6 +62,7 @@ export async function detectCodecSupport(probe: CodecProbe): Promise<CodecSuppor
     })
     return {
       contentType: probe.contentType,
+      ...(probe.hdrFormat === undefined ? {} : { hdrFormat: probe.hdrFormat }),
       canPlayType,
       mediaSource,
       supported: result.supported,
@@ -52,8 +70,24 @@ export async function detectCodecSupport(probe: CodecProbe): Promise<CodecSuppor
       powerEfficient: result.powerEfficient,
     }
   } catch {
-    return { contentType: probe.contentType, canPlayType, mediaSource }
+    return {
+      contentType: probe.contentType,
+      ...(probe.hdrFormat === undefined ? {} : { hdrFormat: probe.hdrFormat }),
+      canPlayType,
+      mediaSource,
+    }
   }
+}
+
+export function declaredHdrFormats(results: readonly CodecSupport[]): string[] {
+  const formats = new Set<string>()
+  for (const result of results) {
+    if (result.hdrFormat === undefined
+      || result.supported !== true
+      || result.smooth === false) continue
+    formats.add(result.hdrFormat.toLowerCase())
+  }
+  return [...formats]
 }
 
 export function declaredVideoCodecs(results: readonly CodecSupport[]): VideoCodec[] {

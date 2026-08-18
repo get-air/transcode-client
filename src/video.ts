@@ -14,7 +14,7 @@ import type {
   VideoSource,
 } from "@get-air/video"
 
-import { declaredVideoCodecs, detectCodecSupport } from "./Capabilities.js"
+import { declaredHdrFormats, declaredVideoCodecs, detectCodecSupport } from "./Capabilities.js"
 import type {
   CreateSessionRequest,
   TranscodeCallOptions,
@@ -51,14 +51,19 @@ export function transcodeVideoBackend(defaults: TranscodeVideoBackendOptions): V
     isAvailable: () => true,
     open: async ({ element, options }) => {
       const source = normalizeSource(options.source)
-      const videoCodecs = defaults.videoCodecs ?? await detectVideoCodecs()
+      const detected = await detectVideoCapabilities()
+      const videoCodecs = defaults.videoCodecs ?? detected.videoCodecs
       const headers = sourceHeaders(source)
       const request: CreateSessionRequest = {
         source: {
           url: source.uri,
           ...(headers === undefined ? {} : { headers }),
         },
-        output: { ...defaults.output, video_codecs: videoCodecs },
+        output: {
+          ...defaults.output,
+          video_codecs: videoCodecs,
+          hdr_formats: defaults.output?.hdr_formats ?? detected.hdrFormats,
+        },
       }
       const session = await defaults.client.createSession(request,
         options.signal === undefined ? {} : { signal: options.signal })
@@ -88,6 +93,7 @@ class TranscodeHlsController extends EventTarget implements BackendVideoControll
   #hls: Hls | undefined
   #destroyed = false
   #playing = false
+  #lastHlsRecovery = 0
   #unsubscribers: Array<() => void> = []
 
   constructor(
@@ -152,8 +158,10 @@ class TranscodeHlsController extends EventTarget implements BackendVideoControll
     if (trackId !== undefined && selected < 0) throw new Error(`Unknown ${kind} track: ${trackId}`)
     if (this.#hls && kind === "audio") this.#hls.audioTrack = selected
     else if (this.#hls && kind === "subtitle") this.#hls.subtitleTrack = selected
-    else if (kind === "audio" || kind === "subtitle") {
-      throw new Error(`Native HLS ${kind} selection is controlled by the platform player`)
+    else if (kind === "audio") selectNativeAudioTrack(this.element, selected)
+    else if (kind === "subtitle") selectNativeSubtitleTrack(this.element, selected)
+    for (const track of this.tracks) {
+      if (track.kind === kind) track.selected = track.id === trackId
     }
     this.dispatchEvent(new CustomEvent("trackchange", { detail: { kind, trackId } }))
   }
@@ -266,6 +274,22 @@ class TranscodeHlsController extends EventTarget implements BackendVideoControll
       hls.loadSource(masterUrl)
       hls.attachMedia(this.element)
     })
+    hls.on(HlsConstructor.Events.ERROR, (_event, data) => {
+      if (!data.fatal) return
+      const now = Date.now()
+      if (data.type === HlsConstructor.ErrorTypes.MEDIA_ERROR
+        && now - this.#lastHlsRecovery > 5_000) {
+        this.#lastHlsRecovery = now
+        hls.recoverMediaError()
+        return
+      }
+      this.dispatchEvent(new CustomEvent("error", {
+        detail: {
+          code: "hls_runtime_failed",
+          message: `HLS playback failed: ${data.details ?? data.type}`,
+        },
+      }))
+    })
   }
 
   #listen(target: EventTarget, type: string, listener: EventListener): void {
@@ -308,6 +332,37 @@ const renditionTrack = (rendition: TranscodeSession["renditions"][number]): Medi
   forced: false,
 })
 
+interface NativeAudioTrack {
+  enabled: boolean
+}
+
+interface NativeAudioTrackList {
+  readonly length: number
+  readonly [index: number]: NativeAudioTrack
+}
+
+const selectNativeAudioTrack = (element: HTMLVideoElement, selected: number): void => {
+  const tracks = (element as HTMLVideoElement & { audioTracks?: NativeAudioTrackList }).audioTracks
+  if (!tracks || selected < 0 || selected >= tracks.length) {
+    throw new Error("Native HLS audio selection is unavailable on this platform")
+  }
+  for (let index = 0; index < tracks.length; index += 1) {
+    const track = tracks[index]
+    if (track) track.enabled = index === selected
+  }
+}
+
+const selectNativeSubtitleTrack = (element: HTMLVideoElement, selected: number): void => {
+  const tracks = element.textTracks
+  if (selected >= tracks.length) {
+    throw new Error("Native HLS subtitle selection is unavailable on this platform")
+  }
+  for (let index = 0; index < tracks.length; index += 1) {
+    const track = tracks[index]
+    if (track) track.mode = index === selected ? "showing" : "disabled"
+  }
+}
+
 const waitForMedia = (
   element: HTMLVideoElement,
   timeoutMillis: number,
@@ -330,7 +385,10 @@ const waitForMedia = (
   signal?.addEventListener("abort", aborted, { once: true })
 })
 
-async function detectVideoCodecs(): Promise<VideoCodec[]> {
+async function detectVideoCapabilities(): Promise<{
+  videoCodecs: VideoCodec[]
+  hdrFormats: string[]
+}> {
   const results = await Promise.all([
     detectCodecSupport({
       contentType: 'video/mp4; codecs="avc1.640028"',
@@ -341,9 +399,24 @@ async function detectVideoCodecs(): Promise<VideoCodec[]> {
       width: 3840, height: 2160, bitrate: 25_000_000, framerate: 24,
     }),
     detectCodecSupport({
+      contentType: 'video/mp4; codecs="hvc1.2.4.L153.B0"',
+      width: 3840, height: 2160, bitrate: 25_000_000, framerate: 24,
+      hdrFormat: "hdr10", colorGamut: "rec2020", transferFunction: "pq",
+      hdrMetadataType: "smpteSt2086",
+    }),
+    detectCodecSupport({
       contentType: 'video/mp4; codecs="av01.0.12M.10"',
       width: 3840, height: 2160, bitrate: 18_000_000, framerate: 24,
     }),
+    detectCodecSupport({
+      contentType: 'video/mp4; codecs="av01.0.12M.10"',
+      width: 3840, height: 2160, bitrate: 18_000_000, framerate: 24,
+      hdrFormat: "hdr10", colorGamut: "rec2020", transferFunction: "pq",
+      hdrMetadataType: "smpteSt2086",
+    }),
   ])
-  return declaredVideoCodecs(results)
+  return {
+    videoCodecs: declaredVideoCodecs(results),
+    hdrFormats: declaredHdrFormats(results),
+  }
 }

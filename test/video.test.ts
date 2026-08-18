@@ -19,6 +19,10 @@ const session: TranscodeSession = {
       kind: "audio", source_track_index: 1, name: "English", language: "en",
       default: true, mode: "transcode", output_codec: "mp4a.40.2", hdr_passthrough: false,
     },
+    {
+      kind: "audio", source_track_index: 2, name: "Spanish", language: "es",
+      default: false, mode: "transcode", output_codec: "mp4a.40.2", hdr_passthrough: false,
+    },
   ],
   master_url: "/v1/sessions/6a22f5cf-823a-40ee-85d3-f656b63f4c85/master.m3u8",
 }
@@ -36,6 +40,8 @@ describe("transcode video backend", () => {
       video.dispatchEvent(new Event("loadedmetadata"))))
     video.play = vi.fn(async () => undefined)
     video.pause = vi.fn()
+    const nativeAudio = [{ enabled: true }, { enabled: false }]
+    Object.defineProperty(video, "audioTracks", { value: nativeAudio })
     const adapter = transcodeVideoBackend({ client, videoCodecs: ["h264"] })
 
     const controller = await adapter.open({
@@ -46,11 +52,14 @@ describe("transcode video backend", () => {
 
     expect(client.createSession).toHaveBeenCalledWith(expect.objectContaining({
       source: { url: "https://media.example/movie.mkv" },
-      output: { video_codecs: ["h264"] },
+      output: { video_codecs: ["h264"], hdr_formats: [] },
     }), {})
     expect(video.src).toContain("/v1/sessions/id/master.m3u8")
     expect(controller.capabilities.backend).toBe("transcode")
     expect(controller.media.durationSeconds).toBe(8)
+    await controller.selectTrack("audio", "audio-2")
+    expect(nativeAudio).toEqual([{ enabled: false }, { enabled: true }])
+    expect(controller.tracks.find((track) => track.id === "audio-2")?.selected).toBe(true)
     await controller.destroy()
     expect(client.deleteSession).toHaveBeenCalledWith(session.id)
   })
