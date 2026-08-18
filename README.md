@@ -101,6 +101,14 @@ fails. Add `?mse=1` to force the hls.js/MSE path during qualification.
 The adapter sends the maximum dimensions proven by its browser codec probes to
 the server, so a supported 4K HDR source remains passthrough instead of being
 mistaken for a 1080p downscale that would require unavailable tone mapping.
+The browser example also injects `transcodeRelayHttpTransport()`, which carries
+MediaBunny byte-range reads through the local server when the media origin does
+not grant browser CORS access.
+When native file playback supports a video codec that MSE and WebCodecs do not,
+the video adapter uses a hybrid fallback: the original video remains in the
+native media element while a synchronized hidden HLS element plays the server's
+AAC rendition. Seeking, playback rate, volume, and audio-track changes update
+both timelines.
 
 The qualification fixture has been exercised through both native HLS and
 hls.js: VP9/Opus MKV was converted to H.264 High plus AAC-LC, reached media

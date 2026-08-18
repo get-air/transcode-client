@@ -1,5 +1,5 @@
 import { TranscodeClient } from '@get-air/transcode'
-import { transcodeVideoBackend } from '@get-air/transcode/video'
+import { transcodeRelayHttpTransport, transcodeVideoBackend } from '@get-air/transcode/video'
 import {
   createVideoClient,
   type MediaTrack,
@@ -50,6 +50,7 @@ async function playSource(): Promise<void> {
     controller = undefined
     const transcode = await TranscodeClient.connect({ origin: origin.value })
     const client = createVideoClient({
+      http: transcodeRelayHttpTransport(transcode),
       adapters: [transcodeVideoBackend({
         client: transcode,
         preferNativeHls: parameters.get('mse') !== '1',
@@ -64,9 +65,12 @@ async function playSource(): Promise<void> {
       await controller.destroy()
       return
     }
-    backend.textContent = controller.capabilities.backend
+    const hybrid = controller.sessionId.startsWith('hybrid-')
+    backend.textContent = hybrid ? 'hybrid' : controller.capabilities.backend
     const codecs = controller.tracks.map((track) => track.codec).filter(Boolean).join(' + ')
-    playbackSummary = controller.capabilities.backend === 'html'
+    playbackSummary = hybrid
+      ? `Native video + GStreamer AAC · ${codecs}`
+      : controller.capabilities.backend === 'html'
       ? 'Direct HTML playback—the source needs no proxy or transcoding.'
       : controller.capabilities.backend === 'mediabunny'
         ? `MediaBunny client decode · ${codecs}`

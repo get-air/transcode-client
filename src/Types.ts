@@ -30,6 +30,7 @@ export interface ExternalSubtitleRequest {
 
 export interface CreateSessionRequest {
   readonly source: TranscodeSource
+  readonly relay_only?: boolean
   readonly output?: TranscodeOutputOptions
   readonly subtitles?: readonly ExternalSubtitleRequest[]
 }

@@ -86,7 +86,8 @@ export function declaredHdrFormats(results: readonly CodecSupport[]): string[] {
   for (const result of results) {
     if (result.hdrFormat === undefined
       || result.supported !== true
-      || result.smooth === false) continue
+      || result.smooth === false
+      || !result.mediaSource) continue
     formats.add(result.hdrFormat.toLowerCase())
   }
   return [...formats]
@@ -95,7 +96,7 @@ export function declaredHdrFormats(results: readonly CodecSupport[]): string[] {
 export function declaredVideoCodecs(results: readonly CodecSupport[]): VideoCodec[] {
   const codecs = new Set<VideoCodec>(["h264"])
   for (const result of results) {
-    if (result.supported !== true || result.smooth === false) continue
+    if (result.supported !== true || result.smooth === false || !result.mediaSource) continue
     const codec = codecFamily(result.contentType)
     if (codec) codecs.add(codec)
   }
@@ -110,7 +111,7 @@ export function declaredVideoDimensions(results: readonly CodecSupport[]): {
   let maxWidth = 1920
   let maxHeight = 1080
   for (const result of results) {
-    if (result.supported !== true || result.smooth === false
+    if (result.supported !== true || result.smooth === false || !result.mediaSource
       || result.width === undefined || result.height === undefined) continue
     if (result.width * result.height <= maxWidth * maxHeight) continue
     maxWidth = result.width

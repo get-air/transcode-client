@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest"
 import type { TranscodeSession } from "../src/Types.js"
 import {
   shouldUseNativeHls,
+  transcodeRelayHttpTransport,
   transcodeVideoBackend,
   type TranscodeSessionClient,
 } from "../src/video.js"
@@ -32,6 +33,38 @@ const session: TranscodeSession = {
 }
 
 describe("transcode video backend", () => {
+  it("relays range requests through a source-only session", async () => {
+    const createSession = vi.fn(async () => session)
+    const fetch = vi.fn(async (_request: Request) => new Response("range", {
+      status: 206,
+      headers: { "content-range": "bytes 10-14/100" },
+    }))
+    const transport = transcodeRelayHttpTransport({
+      origin: "http://127.0.0.1:11472",
+      createSession,
+      deleteSession: vi.fn(async () => undefined),
+      masterUrl: () => "",
+    }, { fetch })
+
+    const response = await transport.fetch(new Request("https://media.example/movie.mkv", {
+      headers: { Authorization: "Bearer test", Range: "bytes=10-14" },
+    }))
+
+    expect(response.status).toBe(206)
+    expect(createSession).toHaveBeenCalledWith({
+      source: {
+        url: "https://media.example/movie.mkv",
+        headers: { Authorization: "Bearer test" },
+      },
+      relay_only: true,
+    })
+    const relayed = vi.mocked(fetch).mock.calls[0]?.[0]
+    expect(relayed?.url).toBe(
+      `http://127.0.0.1:11472/v1/sessions/${session.id}/source`,
+    )
+    expect(relayed?.headers.get("range")).toBe("bytes=10-14")
+  })
+
   it("uses hls.js when native HLS cannot switch alternate audio", () => {
     const video = document.createElement("video")
     video.canPlayType = () => "probably"

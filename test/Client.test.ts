@@ -139,6 +139,13 @@ describe("browser capability declarations", () => {
     ])).toEqual(["h264", "h265"])
   })
 
+  it("does not advertise file-only codecs to an MSE HLS session", () => {
+    expect(declaredVideoCodecs([
+      { contentType: 'video/mp4; codecs="hvc1"', canPlayType: "probably", mediaSource: false,
+        supported: true, smooth: true, powerEfficient: true },
+    ])).toEqual(["h264"])
+  })
+
   it("declares HDR only from a supported smooth HDR-specific probe", () => {
     expect(declaredHdrFormats([
       { contentType: 'video/mp4; codecs="hvc1"', hdrFormat: "HDR10",
@@ -146,6 +153,13 @@ describe("browser capability declarations", () => {
       { contentType: 'video/mp4; codecs="av01"', hdrFormat: "hdr10+",
         canPlayType: "maybe", mediaSource: true, supported: true, smooth: false },
     ])).toEqual(["hdr10"])
+  })
+
+  it("does not advertise file-only HDR to an MSE HLS session", () => {
+    expect(declaredHdrFormats([
+      { contentType: 'video/mp4; codecs="hvc1"', hdrFormat: "HDR10",
+        canPlayType: "probably", mediaSource: false, supported: true, smooth: true },
+    ])).toEqual([])
   })
 
   it("declares the largest dimensions from a supported smooth probe", () => {
