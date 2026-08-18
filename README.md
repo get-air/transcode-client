@@ -8,6 +8,21 @@ finishes.
 The package never runs GStreamer in JavaScript. Tauri applications can embed
 the Rust crate, inject its ephemeral origin, and use this same client.
 
+For an embedded `spawn_tauri_host`, inject both values returned by Rust and use
+the shared Tauri HTTP adapter. The bearer token protects the loopback API from
+untrusted webpages and is different from the token in cast-facing media URLs:
+
+```ts
+import { makeTauriHttpTransport } from "@get-air/http/tauri"
+import { TranscodeClient } from "@get-air/transcode"
+
+const client = await TranscodeClient.connect({
+  origin: embedded.adminOrigin,
+  headers: { Authorization: `Bearer ${embedded.adminToken}` },
+  transport: makeTauriHttpTransport(),
+})
+```
+
 ```ts
 import {
   TranscodeClient,
