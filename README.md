@@ -23,6 +23,23 @@ const client = await TranscodeClient.connect({
 })
 ```
 
+The Tauri app must register `tauri-plugin-http` and scope its capability to the
+ephemeral loopback origin. A typical window capability includes:
+
+```json
+{
+  "identifier": "air-transcode",
+  "windows": ["main"],
+  "permissions": [{
+    "identifier": "http:default",
+    "allow": [{ "url": "http://127.0.0.1:*" }]
+  }]
+}
+```
+
+Keep the scope loopback-only; the separate tokenized cast URL is consumed by
+the TV, not fetched through the WebView's privileged HTTP adapter.
+
 ```ts
 import {
   TranscodeClient,
