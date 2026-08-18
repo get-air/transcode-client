@@ -137,7 +137,7 @@ class TranscodeHlsController extends EventTarget implements BackendVideoControll
     this.#listen(this.element, "progress", () => this.#emitBuffer())
     this.#listen(this.element, "play", () => { this.#playing = true })
     this.#listen(this.element, "pause", () => { this.#playing = false })
-    if (this.preferNativeHls && this.element.canPlayType(HLS_MIME)) {
+    if (shouldUseNativeHls(this.element, this.session, this.preferNativeHls)) {
       await this.#startNative(masterUrl, options.signal)
     }
     else await this.#startMse(masterUrl, options.signal)
@@ -317,6 +317,22 @@ const sourceHeaders = (source: VideoSource): Record<string, string> | undefined 
   if (source.userAgent) headers["user-agent"] = source.userAgent
   if (source.referrer) headers.referer = source.referrer
   return Object.keys(headers).length === 0 ? undefined : headers
+}
+
+/**
+ * Native HLS is only suitable for a multitrack session when the platform
+ * exposes its non-standard audio track list. Chromium can report HLS support
+ * without exposing that API, which otherwise makes alternate audio impossible
+ * to select after playback starts.
+ */
+export function shouldUseNativeHls(
+  element: HTMLVideoElement,
+  session: Pick<TranscodeSession, "renditions">,
+  preferred: boolean,
+): boolean {
+  if (!preferred || !element.canPlayType(HLS_MIME)) return false
+  const audioTrackCount = session.renditions.filter((rendition) => rendition.kind === "audio").length
+  return audioTrackCount <= 1 || "audioTracks" in element
 }
 
 const renditionTrack = (rendition: TranscodeSession["renditions"][number]): MediaTrack => ({

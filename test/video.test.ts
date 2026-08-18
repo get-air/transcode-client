@@ -3,7 +3,11 @@
 import { describe, expect, it, vi } from "vitest"
 
 import type { TranscodeSession } from "../src/Types.js"
-import { transcodeVideoBackend, type TranscodeSessionClient } from "../src/video.js"
+import {
+  shouldUseNativeHls,
+  transcodeVideoBackend,
+  type TranscodeSessionClient,
+} from "../src/video.js"
 
 const session: TranscodeSession = {
   id: "6a22f5cf-823a-40ee-85d3-f656b63f4c85",
@@ -28,6 +32,16 @@ const session: TranscodeSession = {
 }
 
 describe("transcode video backend", () => {
+  it("uses hls.js when native HLS cannot switch alternate audio", () => {
+    const video = document.createElement("video")
+    video.canPlayType = () => "probably"
+
+    expect(shouldUseNativeHls(video, session, true)).toBe(false)
+    expect(shouldUseNativeHls(video, {
+      renditions: session.renditions.filter((rendition) => rendition.source_track_index !== 2),
+    }, true)).toBe(true)
+  })
+
   it("uses native HLS when available and destroys the server session", async () => {
     const client: TranscodeSessionClient = {
       createSession: vi.fn(async () => session),

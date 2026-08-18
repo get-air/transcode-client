@@ -7,20 +7,38 @@
   </head>
   <body>
     <main>
-      <header>
+      <header class="topbar">
         <div>
           <h1>Air playback router</h1>
-          <p>Try HTML first. Use GStreamer only when the source needs it.</p>
+          <p>Paste a media URL, inspect the chosen engine, and switch its tracks.</p>
         </div>
-        <output id="backend">Idle</output>
+        <output id="backend" aria-live="polite">Idle</output>
       </header>
       <form id="source-form">
-        <label>Media URL <input id="source" type="url" required></label>
+        <label class="source-field">Media URL <input id="source" type="url" autocomplete="off" required></label>
+        <label>Playback mode
+          <select id="route">
+            <option value="auto">Auto</option>
+            <option value="html">Force HTML</option>
+            <option value="mediabunny">Force MediaBunny</option>
+            <option value="transcode">Force Transcode</option>
+          </select>
+        </label>
         <label>Transcoder origin <input id="origin" type="url" required value="http://127.0.0.1:11472"></label>
         <button type="submit">Play URL</button>
       </form>
-      <video id="video" controls playsinline></video>
-      <p id="status" role="status">Enter a direct media URL.</p>
+      <section class="player-shell" aria-label="Media player">
+        <video id="video" controls playsinline></video>
+        <div id="track-controls" class="track-controls" hidden>
+          <label id="audio-track-field" hidden>Audio track
+            <select id="audio-track"></select>
+          </label>
+          <label id="subtitle-track-field" hidden>Subtitles
+            <select id="subtitle-track"></select>
+          </label>
+        </div>
+      </section>
+      <p id="status" role="status" aria-live="polite">Enter a direct media URL.</p>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>
