@@ -77,7 +77,7 @@ async function playSource(): Promise<void> {
   } catch (cause) {
     if (sequence !== loadSequence) return
     backend.textContent = 'Failed'
-    playbackSummary = cause instanceof Error ? cause.message : String(cause)
+    playbackSummary = errorDetails(cause)
     status.textContent = playbackSummary
   } finally {
     if (sequence === loadSequence) setBusy(false)

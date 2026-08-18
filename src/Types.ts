@@ -122,6 +122,8 @@ export interface CodecProbe {
 
 export interface CodecSupport {
   readonly contentType: string
+  readonly width?: number
+  readonly height?: number
   readonly hdrFormat?: string
   readonly canPlayType: CanPlayTypeResult
   readonly mediaSource: boolean

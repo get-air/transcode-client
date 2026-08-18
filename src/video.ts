@@ -14,7 +14,12 @@ import type {
   VideoSource,
 } from "@get-air/video"
 
-import { declaredHdrFormats, declaredVideoCodecs, detectCodecSupport } from "./Capabilities.js"
+import {
+  declaredHdrFormats,
+  declaredVideoCodecs,
+  declaredVideoDimensions,
+  detectCodecSupport,
+} from "./Capabilities.js"
 import type {
   CreateSessionRequest,
   TranscodeCallOptions,
@@ -61,6 +66,8 @@ export function transcodeVideoBackend(defaults: TranscodeVideoBackendOptions): V
         },
         output: {
           ...defaults.output,
+          max_width: defaults.output?.max_width ?? detected.maxWidth,
+          max_height: defaults.output?.max_height ?? detected.maxHeight,
           video_codecs: videoCodecs,
           hdr_formats: defaults.output?.hdr_formats ?? detected.hdrFormats,
         },
@@ -404,6 +411,8 @@ const waitForMedia = (
 async function detectVideoCapabilities(): Promise<{
   videoCodecs: VideoCodec[]
   hdrFormats: string[]
+  maxWidth: number
+  maxHeight: number
 }> {
   const results = await Promise.all([
     detectCodecSupport({
@@ -434,5 +443,6 @@ async function detectVideoCapabilities(): Promise<{
   return {
     videoCodecs: declaredVideoCodecs(results),
     hdrFormats: declaredHdrFormats(results),
+    ...declaredVideoDimensions(results),
   }
 }

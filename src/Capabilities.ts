@@ -10,10 +10,15 @@ const codecFamily = (contentType: string): VideoCodec | undefined => {
 
 /** Advisory browser capability probe; successful playback still requires startup verification. */
 export async function detectCodecSupport(probe: CodecProbe): Promise<CodecSupport> {
+  const declaration = {
+    contentType: probe.contentType,
+    ...(probe.width === undefined ? {} : { width: probe.width }),
+    ...(probe.height === undefined ? {} : { height: probe.height }),
+    ...(probe.hdrFormat === undefined ? {} : { hdrFormat: probe.hdrFormat }),
+  }
   if (typeof document === "undefined") {
     return {
-      contentType: probe.contentType,
-      ...(probe.hdrFormat === undefined ? {} : { hdrFormat: probe.hdrFormat }),
+      ...declaration,
       canPlayType: "",
       mediaSource: false,
     }
@@ -28,8 +33,7 @@ export async function detectCodecSupport(probe: CodecProbe): Promise<CodecSuppor
     || probe.bitrate === undefined
     || probe.framerate === undefined) {
     return {
-      contentType: probe.contentType,
-      ...(probe.hdrFormat === undefined ? {} : { hdrFormat: probe.hdrFormat }),
+      ...declaration,
       canPlayType,
       mediaSource,
     }
@@ -61,8 +65,7 @@ export async function detectCodecSupport(probe: CodecProbe): Promise<CodecSuppor
       }),
     })
     return {
-      contentType: probe.contentType,
-      ...(probe.hdrFormat === undefined ? {} : { hdrFormat: probe.hdrFormat }),
+      ...declaration,
       canPlayType,
       mediaSource,
       supported: result.supported,
@@ -71,8 +74,7 @@ export async function detectCodecSupport(probe: CodecProbe): Promise<CodecSuppor
     }
   } catch {
     return {
-      contentType: probe.contentType,
-      ...(probe.hdrFormat === undefined ? {} : { hdrFormat: probe.hdrFormat }),
+      ...declaration,
       canPlayType,
       mediaSource,
     }
@@ -98,4 +100,21 @@ export function declaredVideoCodecs(results: readonly CodecSupport[]): VideoCode
     if (codec) codecs.add(codec)
   }
   return [...codecs]
+}
+
+/** Maximum dimensions from probes the browser reports as supported and smooth. */
+export function declaredVideoDimensions(results: readonly CodecSupport[]): {
+  maxWidth: number
+  maxHeight: number
+} {
+  let maxWidth = 1920
+  let maxHeight = 1080
+  for (const result of results) {
+    if (result.supported !== true || result.smooth === false
+      || result.width === undefined || result.height === undefined) continue
+    if (result.width * result.height <= maxWidth * maxHeight) continue
+    maxWidth = result.width
+    maxHeight = result.height
+  }
+  return { maxWidth, maxHeight }
 }

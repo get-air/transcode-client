@@ -66,7 +66,12 @@ describe("transcode video backend", () => {
 
     expect(client.createSession).toHaveBeenCalledWith(expect.objectContaining({
       source: { url: "https://media.example/movie.mkv" },
-      output: { video_codecs: ["h264"], hdr_formats: [] },
+      output: {
+        max_width: 1920,
+        max_height: 1080,
+        video_codecs: ["h264"],
+        hdr_formats: [],
+      },
     }), {})
     expect(video.src).toContain("/v1/sessions/id/master.m3u8")
     expect(controller.capabilities.backend).toBe("transcode")

@@ -98,6 +98,9 @@ Networking is injected through `@get-air/http`, including Tauri transports.
 `examples/browser` is a plain HTML URL player. It tries the regular video
 element first and uses `transcodeVideoBackend()` only after direct startup
 fails. Add `?mse=1` to force the hls.js/MSE path during qualification.
+The adapter sends the maximum dimensions proven by its browser codec probes to
+the server, so a supported 4K HDR source remains passthrough instead of being
+mistaken for a 1080p downscale that would require unavailable tone mapping.
 
 The qualification fixture has been exercised through both native HLS and
 hls.js: VP9/Opus MKV was converted to H.264 High plus AAC-LC, reached media

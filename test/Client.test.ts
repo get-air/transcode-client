@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   declaredVideoCodecs,
+  declaredVideoDimensions,
   declaredHdrFormats,
   isTranscodeError,
   TranscodeClient,
@@ -145,5 +146,18 @@ describe("browser capability declarations", () => {
       { contentType: 'video/mp4; codecs="av01"', hdrFormat: "hdr10+",
         canPlayType: "maybe", mediaSource: true, supported: true, smooth: false },
     ])).toEqual(["hdr10"])
+  })
+
+  it("declares the largest dimensions from a supported smooth probe", () => {
+    expect(declaredVideoDimensions([
+      { contentType: 'video/mp4; codecs="avc1"', width: 1920, height: 1080,
+        canPlayType: "probably", mediaSource: true, supported: true, smooth: true },
+      { contentType: 'video/mp4; codecs="hvc1"', width: 3840, height: 2160,
+        canPlayType: "probably", mediaSource: true, supported: true, smooth: true },
+    ])).toEqual({ maxWidth: 3840, maxHeight: 2160 })
+    expect(declaredVideoDimensions([
+      { contentType: 'video/mp4; codecs="hvc1"', width: 3840, height: 2160,
+        canPlayType: "probably", mediaSource: true, supported: true, smooth: false },
+    ])).toEqual({ maxWidth: 1920, maxHeight: 1080 })
   })
 })
