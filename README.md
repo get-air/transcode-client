@@ -60,3 +60,14 @@ video router must still verify real startup and fall back when a browser
 overstates support.
 
 Networking is injected through `@get-air/http`, including Tauri transports.
+
+## Browser example
+
+`examples/browser` is a plain HTML URL player. It tries the regular video
+element first and uses `transcodeVideoBackend()` only after direct startup
+fails. Add `?mse=1` to force the hls.js/MSE path during qualification.
+
+The qualification fixture has been exercised through both native HLS and
+hls.js: VP9/Opus MKV was converted to H.264 High plus AAC-LC, reached media
+ready state 4 with a 3.009-second duration, exposed buffered/seekable ranges,
+and produced no failed GStreamer pipelines.

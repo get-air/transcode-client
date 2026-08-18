@@ -30,6 +30,8 @@ export interface TranscodeVideoBackendOptions {
   readonly output?: TranscodeOutputOptions
   readonly startupTimeoutMillis?: number
   readonly videoCodecs?: readonly VideoCodec[]
+  /** Prefer platform-native HLS before hls.js/MSE. Defaults to true. */
+  readonly preferNativeHls?: boolean
 }
 
 export interface TranscodeSessionClient {
@@ -65,6 +67,7 @@ export function transcodeVideoBackend(defaults: TranscodeVideoBackendOptions): V
         session,
         defaults.client,
         defaults.startupTimeoutMillis ?? 30_000,
+        defaults.preferNativeHls ?? true,
       )
       try {
         await controller.start(defaults.client.masterUrl(session), options)
@@ -92,6 +95,7 @@ class TranscodeHlsController extends EventTarget implements BackendVideoControll
     private readonly session: TranscodeSession,
     private readonly client: TranscodeSessionClient,
     private readonly startupTimeoutMillis: number,
+    private readonly preferNativeHls: boolean,
   ) {
     super()
     this.sessionId = `transcode-${session.id}`
@@ -127,7 +131,9 @@ class TranscodeHlsController extends EventTarget implements BackendVideoControll
     this.#listen(this.element, "progress", () => this.#emitBuffer())
     this.#listen(this.element, "play", () => { this.#playing = true })
     this.#listen(this.element, "pause", () => { this.#playing = false })
-    if (this.element.canPlayType(HLS_MIME)) await this.#startNative(masterUrl, options.signal)
+    if (this.preferNativeHls && this.element.canPlayType(HLS_MIME)) {
+      await this.#startNative(masterUrl, options.signal)
+    }
     else await this.#startMse(masterUrl, options.signal)
     if (options.autoplay) await this.play()
   }

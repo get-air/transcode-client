@@ -24,8 +24,9 @@
     "build": "tsc -p tsconfig.build.json",
     "check": "tsc -p tsconfig.json --noEmit",
     "check:effect": "effect-language-service diagnostics --project tsconfig.json --strict --format text",
+    "check:example": "npm --prefix examples/browser ci --ignore-scripts && npm --prefix examples/browser run build",
     "test": "vitest run",
-    "ci": "npm run check && npm run check:effect && npm run test && npm run build && npm pack --dry-run --ignore-scripts",
+    "ci": "npm run check && npm run check:effect && npm run test && npm run build && npm run check:example && npm pack --dry-run --ignore-scripts",
     "prepack": "npm run build"
   },
   "dependencies": {

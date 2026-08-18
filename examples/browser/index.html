@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Air playback router</title>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <h1>Air playback router</h1>
+          <p>Try HTML first. Use GStreamer only when the source needs it.</p>
+        </div>
+        <output id="backend">Idle</output>
+      </header>
+      <form id="source-form">
+        <label>Media URL <input id="source" type="url" required></label>
+        <label>Transcoder origin <input id="origin" type="url" required value="http://127.0.0.1:11472"></label>
+        <button type="submit">Play URL</button>
+      </form>
+      <video id="video" controls playsinline></video>
+      <p id="status" role="status">Enter a direct media URL.</p>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
