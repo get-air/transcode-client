@@ -1,0 +1,65 @@
+{
+  "name": "@get-air/transcode",
+  "version": "0.1.0",
+  "description": "Promise and Effect client for capability-aware Air transcoding sessions",
+  "type": "module",
+  "sideEffects": false,
+  "files": ["dist", "README.md", "LICENSE"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./effect": {
+      "types": "./dist/effect.d.ts",
+      "import": "./dist/effect.js"
+    },
+    "./video": {
+      "types": "./dist/video.d.ts",
+      "import": "./dist/video.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "check:effect": "effect-language-service diagnostics --project tsconfig.json --strict --format text",
+    "test": "vitest run",
+    "ci": "npm run check && npm run check:effect && npm run test && npm run build && npm pack --dry-run --ignore-scripts",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@get-air/http": "^0.1.0",
+    "effect": "^3.22.1"
+  },
+  "optionalDependencies": {
+    "hls.js": "^1.7.0"
+  },
+  "peerDependencies": {
+    "@get-air/video": "^0.1.1"
+  },
+  "peerDependenciesMeta": {
+    "@get-air/video": { "optional": true }
+  },
+  "devDependencies": {
+    "@get-air/video": "^0.1.1",
+    "@effect/language-service": "^0.87.2",
+    "happy-dom": "^20.11.2",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  },
+  "engines": { "node": ">=20" },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/get-air/transcode-client.git"
+  },
+  "bugs": { "url": "https://github.com/get-air/transcode-client/issues" },
+  "homepage": "https://github.com/get-air/transcode-client#readme",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "registry": "https://registry.npmjs.org/"
+  },
+  "keywords": ["gstreamer", "hls", "cmaf", "transcode", "effect"]
+}

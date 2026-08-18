@@ -1,0 +1,29 @@
+name: Publish to npm
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    if: github.repository == 'get-air/transcode-client'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: npm
+      - run: npm install --global npm@11
+      - run: npm ci
+      - name: Verify stable release tag
+        run: |
+          test "$GITHUB_REF_NAME" = "v$(node --print "require('./package.json').version")"
+          node --eval "const v=require('./package.json').version;if(v.includes('-'))process.exit(1)"
+      - run: npm run ci
+      - run: npm publish --access public --provenance
