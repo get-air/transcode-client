@@ -106,9 +106,9 @@ Networking is injected through `@get-air/http`, including Tauri transports.
 `examples/browser` is a plain HTML URL player. It tries the regular video
 element first and uses `transcodeVideoBackend()` only after direct startup
 fails. Add `?mse=1` to force the hls.js/MSE path during qualification.
-The adapter sends the maximum dimensions proven by its browser codec probes to
-the server, so a supported 4K HDR source remains passthrough instead of being
-mistaken for a 1080p downscale that would require unavailable tone mapping.
+The universal transcode adapter defaults to 1080p H.264/AAC unless the caller
+explicitly requests a larger output. Native HTML and MediaBunny remain ahead of
+it, so compatible 4K sources avoid this compatibility conversion entirely.
 The browser example also injects `transcodeRelayHttpTransport()`, which carries
 MediaBunny byte-range reads through the local server when the media origin does
 not grant browser CORS access.
@@ -119,9 +119,9 @@ AAC rendition. Seeking, playback rate, volume, and audio-track changes update
 both timelines.
 The hidden audio element loads one audio-only master for its lifetime; changing
 languages updates hls.js's `audioTrack` instead of rebuilding the player.
-Server-side audio bundles warm every rendition for a requested interval in one
-source pass, keeping alternate-track switches and random seeks inside the demo's
-2-second and 3-second gates.
+Hybrid warm operations prepare every audio rendition for a requested interval.
+Full-transcode fallback sessions generate only the selected AAC rendition on
+demand so unusual multi-track remuxes do not block ordinary playback.
 
 The qualification fixture has been exercised through both native HLS and
 hls.js: VP9/Opus MKV was converted to H.264 High plus AAC-LC, reached media

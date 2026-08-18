@@ -216,5 +216,11 @@ describe("browser capability declarations", () => {
       { contentType: 'video/mp4; codecs="hvc1"', width: 3840, height: 2160,
         canPlayType: "probably", mediaSource: true, supported: true, smooth: false },
     ])).toEqual({ maxWidth: 1920, maxHeight: 1080 })
+    expect(declaredVideoDimensions([
+      { contentType: 'video/mp4; codecs="avc1"', width: 1920, height: 1080,
+        canPlayType: "probably", mediaSource: true, supported: true, smooth: true },
+      { contentType: 'video/mp4; codecs="av01"', width: 3840, height: 2160,
+        canPlayType: "probably", mediaSource: true, supported: true, smooth: true },
+    ], ["h264"])).toEqual({ maxWidth: 1920, maxHeight: 1080 })
   })
 })

@@ -104,7 +104,10 @@ export function declaredVideoCodecs(results: readonly CodecSupport[]): VideoCode
 }
 
 /** Maximum dimensions from probes the browser reports as supported and smooth. */
-export function declaredVideoDimensions(results: readonly CodecSupport[]): {
+export function declaredVideoDimensions(
+  results: readonly CodecSupport[],
+  codecs?: readonly VideoCodec[],
+): {
   maxWidth: number
   maxHeight: number
 } {
@@ -113,6 +116,8 @@ export function declaredVideoDimensions(results: readonly CodecSupport[]): {
   for (const result of results) {
     if (result.supported !== true || result.smooth === false || !result.mediaSource
       || result.width === undefined || result.height === undefined) continue
+    const codec = codecFamily(result.contentType)
+    if (codecs !== undefined && (codec === undefined || !codecs.includes(codec))) continue
     if (result.width * result.height <= maxWidth * maxHeight) continue
     maxWidth = result.width
     maxHeight = result.height

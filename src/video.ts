@@ -145,8 +145,10 @@ export function transcodeVideoBackend(defaults: TranscodeVideoBackendOptions): V
         source_id: registered.id,
         output: {
           ...defaults.output,
-          max_width: defaults.output?.max_width ?? detected.maxWidth,
-          max_height: defaults.output?.max_height ?? detected.maxHeight,
+          // This adapter is the universal fallback. Keep its H.264 output at
+          // 1080p unless the caller explicitly opts into a larger encode.
+          max_width: defaults.output?.max_width ?? 1920,
+          max_height: defaults.output?.max_height ?? 1080,
           video_codecs: videoCodecs,
           hdr_formats: defaults.output?.hdr_formats ?? detected.hdrFormats,
         },
@@ -919,9 +921,10 @@ async function detectVideoCapabilities(): Promise<{
       hdrMetadataType: "smpteSt2086",
     }),
   ])
+  const videoCodecs = declaredVideoCodecs(results)
   return {
-    videoCodecs: declaredVideoCodecs(results),
+    videoCodecs,
     hdrFormats: declaredHdrFormats(results),
-    ...declaredVideoDimensions(results),
+    ...declaredVideoDimensions(results, videoCodecs),
   }
 }
