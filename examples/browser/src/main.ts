@@ -40,7 +40,7 @@ let activeSourceId: string | undefined
 
 const parameters = new URLSearchParams(location.search)
 source.value = parameters.get('source') ?? ''
-origin.value = parameters.get('origin') ?? origin.value
+origin.value = parameters.get('origin') ?? `http://${location.hostname}:11472`
 route.value = parameters.get('mode') ?? route.value
 
 form.addEventListener('submit', (event) => {
