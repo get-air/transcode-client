@@ -35,13 +35,16 @@ async function playSource(): Promise<void> {
     })
     controller = await client.attach(video, {
       source: source.value,
-      backend: ['html', 'transcode'],
+      backend: 'auto',
       autoplay: false,
     })
     backend.textContent = controller.capabilities.backend
+    const codecs = controller.tracks.map((track) => track.codec).filter(Boolean).join(' + ')
     status.textContent = controller.capabilities.backend === 'html'
       ? 'Direct HTML playback—the source needs no proxy or transcoding.'
-      : `GStreamer HLS · ${controller.tracks.map((track) => track.codec).filter(Boolean).join(' + ')}`
+      : controller.capabilities.backend === 'mediabunny'
+        ? `MediaBunny client decode · ${codecs}`
+        : `GStreamer HLS · ${codecs}`
     await controller.play()
   } catch (cause) {
     backend.textContent = 'Failed'
