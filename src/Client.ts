@@ -222,24 +222,27 @@ export const makeTranscodeClient = Effect.fn("TranscodeClient.make")(
       Effect.flatMap(({ url, text }) => decodeResponse(schema, url, text)),
     )
 
-    const capabilities = Effect.fn("TranscodeClient.capabilities")(
-      (callOptions: TranscodeCallOptions = {}) => requestJson(
-        "GET",
-        "/v1/capabilities",
-        TranscodeCapabilitiesSchema,
-        undefined,
-        callOptions,
-      ),
+    const get = <A, I>(name: string, path: string, schema: Schema.Schema<A, I, never>) =>
+      Effect.fn(name)((callOptions: TranscodeCallOptions = {}) =>
+        requestJson("GET", path, schema, undefined, callOptions))
+    const getById = <A, I>(
+      name: string,
+      root: string,
+      schema: Schema.Schema<A, I, never>,
+    ) =>
+      Effect.fn(name)((id: string, callOptions: TranscodeCallOptions = {}) =>
+        requestJson("GET", `${root}/${encodeURIComponent(id)}`, schema, undefined, callOptions))
+    const removeById = (name: string, root: string) =>
+      Effect.fn(name)((id: string, callOptions: TranscodeCallOptions = {}) =>
+        requestText(options, "DELETE", `${root}/${encodeURIComponent(id)}`, undefined, callOptions)
+          .pipe(Effect.asVoid))
+
+    const capabilities = get(
+      "TranscodeClient.capabilities",
+      "/v1/capabilities",
+      TranscodeCapabilitiesSchema,
     )
-    const metrics = Effect.fn("TranscodeClient.metrics")(
-      (callOptions: TranscodeCallOptions = {}) => requestJson(
-        "GET",
-        "/v1/metrics",
-        TranscodeMetricsSchema,
-        undefined,
-        callOptions,
-      ),
-    )
+    const metrics = get("TranscodeClient.metrics", "/v1/metrics", TranscodeMetricsSchema)
     const registerSource = Effect.fn("TranscodeClient.registerSource")(
       (source: TranscodeSource, callOptions: TranscodeCallOptions = {}) => requestJson(
         "POST",
@@ -249,24 +252,12 @@ export const makeTranscodeClient = Effect.fn("TranscodeClient.make")(
         callOptions,
       ),
     )
-    const getSource = Effect.fn("TranscodeClient.getSource")(
-      (id: string, callOptions: TranscodeCallOptions = {}) => requestJson(
-        "GET",
-        `/v1/sources/${encodeURIComponent(id)}`,
-        RegisteredSourceSchema,
-        undefined,
-        callOptions,
-      ),
+    const getSource = getById(
+      "TranscodeClient.getSource",
+      "/v1/sources",
+      RegisteredSourceSchema,
     )
-    const releaseSource = Effect.fn("TranscodeClient.releaseSource")(
-      (id: string, callOptions: TranscodeCallOptions = {}) => requestText(
-        options,
-        "DELETE",
-        `/v1/sources/${encodeURIComponent(id)}`,
-        undefined,
-        callOptions,
-      ).pipe(Effect.asVoid),
-    )
+    const releaseSource = removeById("TranscodeClient.releaseSource", "/v1/sources")
     const createSession = Effect.fn("TranscodeClient.createSession")(
       (request: CreateSessionRequest, callOptions: TranscodeCallOptions = {}) => requestJson(
         "POST",
@@ -276,24 +267,12 @@ export const makeTranscodeClient = Effect.fn("TranscodeClient.make")(
         callOptions,
       ),
     )
-    const getSession = Effect.fn("TranscodeClient.getSession")(
-      (id: string, callOptions: TranscodeCallOptions = {}) => requestJson(
-        "GET",
-        `/v1/sessions/${encodeURIComponent(id)}`,
-        TranscodeSessionSchema,
-        undefined,
-        callOptions,
-      ),
+    const getSession = getById(
+      "TranscodeClient.getSession",
+      "/v1/sessions",
+      TranscodeSessionSchema,
     )
-    const deleteSession = Effect.fn("TranscodeClient.deleteSession")(
-      (id: string, callOptions: TranscodeCallOptions = {}) => requestText(
-        options,
-        "DELETE",
-        `/v1/sessions/${encodeURIComponent(id)}`,
-        undefined,
-        callOptions,
-      ).pipe(Effect.asVoid),
-    )
+    const deleteSession = removeById("TranscodeClient.deleteSession", "/v1/sessions")
     const warmSession = Effect.fn("TranscodeClient.warmSession")(
       (
         id: string,

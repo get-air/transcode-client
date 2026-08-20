@@ -8,6 +8,7 @@
     "dev": "vite",
     "preview": "vite preview"
   },
+  "allowScripts": { "esbuild": true },
   "dependencies": {
     "@get-air/transcode": "file:../..",
     "@get-air/video": "^0.2.0"

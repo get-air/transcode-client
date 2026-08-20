@@ -64,12 +64,13 @@ export interface TranscodeSessionClient {
 
 /** Explicit GStreamer fallback adapter for `@get-air/video`. */
 export function transcodeVideoBackend(defaults: TranscodeVideoBackendOptions): VideoBackendAdapter {
+  let capabilityDetection: ReturnType<typeof detectVideoCapabilities> | undefined
   return {
     id: "transcode",
     isAvailable: () => true,
     open: async ({ element, options }) => {
       const source = normalizeSource(options.source)
-      const detected = await detectVideoCapabilities()
+      const detected = await (capabilityDetection ??= detectVideoCapabilities())
       const headers = sourceHeaders(source)
       const callOptions = options.signal === undefined ? {} : { signal: options.signal }
       const registered = await defaults.client.registerSource({
@@ -132,7 +133,7 @@ export function transcodeVideoBackend(defaults: TranscodeVideoBackendOptions): V
 class TranscodeHlsController extends EventTarget implements BackendVideoController {
   readonly sessionId: string
   readonly capabilities: PlayerCapabilities
-  readonly tracks: readonly MediaTrack[]
+  readonly tracks: MediaTrack[]
   readonly media: BackendVideoController["media"]
   #hls: Hls | undefined
   #destroyed = false
@@ -156,7 +157,7 @@ class TranscodeHlsController extends EventTarget implements BackendVideoControll
       seekable: session.seekable,
       live: false,
       container: "hls",
-      tracks: [...this.tracks],
+      tracks: this.tracks,
       chapters: [],
     }
     this.capabilities = {

@@ -30,6 +30,7 @@
     "ci": "npm run check && npm run check:effect && npm run test && npm run build && npm run check:example && npm pack --dry-run --ignore-scripts",
     "prepack": "npm run build"
   },
+  "allowScripts": { "esbuild": true },
   "dependencies": {
     "@get-air/http": "^0.1.0",
     "effect": "^3.22.1"
