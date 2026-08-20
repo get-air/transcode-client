@@ -228,7 +228,7 @@ class TranscodeHlsController extends EventTarget implements BackendVideoControll
     const quality = this.playbackQuality()
     const videoCodec = this.tracks.find((track) => track.kind === "video")?.codec
     const audioCodec = this.tracks.find((track) => track.kind === "audio" && track.selected)?.codec
-    const stats = {
+    const stats: SessionStats = {
       sessionId: this.sessionId,
       sourceId: this.session.source_id,
       playbackMode: "transcode",

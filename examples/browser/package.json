@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@get-air/transcode": "file:../..",
-    "@get-air/video": "^0.1.1"
+    "@get-air/video": "^0.2.0"
   },
   "devDependencies": {
     "typescript": "^5.9.3",
