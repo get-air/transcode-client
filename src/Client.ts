@@ -16,7 +16,7 @@ import {
   TranscodeMetrics as TranscodeMetricsSchema,
   TranscodeSession as TranscodeSessionSchema,
   RegisteredSource as RegisteredSourceSchema,
-  WarmAudioResult as WarmAudioResultSchema,
+  WarmSessionResult as WarmSessionResultSchema,
 } from "./Schemas.js"
 import type {
   CreateSessionRequest,
@@ -27,7 +27,7 @@ import type {
   TranscodeClientOptions,
   TranscodeMetrics,
   TranscodeSession,
-  WarmAudioResult,
+  WarmSessionResult,
 } from "./Types.js"
 
 const DEFAULT_TIMEOUT_MILLIS = 30_000
@@ -69,7 +69,12 @@ export interface TranscodeClientShape {
     options?: TranscodeCallOptions,
   ): Effect.Effect<TranscodeSession, TranscodeClientError>
   deleteSession(id: string, options?: TranscodeCallOptions): Effect.Effect<void, TranscodeClientError>
-  warmAudio(id: string, positionSeconds: number, options?: TranscodeCallOptions): Effect.Effect<WarmAudioResult, TranscodeClientError>
+  warmSession(
+    id: string,
+    positionSeconds: number,
+    bufferSeconds: number,
+    options?: TranscodeCallOptions,
+  ): Effect.Effect<WarmSessionResult, TranscodeClientError>
   masterUrl(session: Pick<TranscodeSession, "master_url">): string
   relayUrl(source: Pick<RegisteredSource, "relay_url">): string
 }
@@ -289,12 +294,17 @@ export const makeTranscodeClient = Effect.fn("TranscodeClient.make")(
         callOptions,
       ).pipe(Effect.asVoid),
     )
-    const warmAudio = Effect.fn("TranscodeClient.warmAudio")(
-      (id: string, positionSeconds: number, callOptions: TranscodeCallOptions = {}) => requestJson(
+    const warmSession = Effect.fn("TranscodeClient.warmSession")(
+      (
+        id: string,
+        positionSeconds: number,
+        bufferSeconds: number,
+        callOptions: TranscodeCallOptions = {},
+      ) => requestJson(
         "POST",
-        `/v1/sessions/${encodeURIComponent(id)}/warm-audio`,
-        WarmAudioResultSchema,
-        { position_seconds: positionSeconds },
+        `/v1/sessions/${encodeURIComponent(id)}/warm`,
+        WarmSessionResultSchema,
+        { position_seconds: positionSeconds, buffer_seconds: bufferSeconds },
         callOptions,
       ),
     )
@@ -313,7 +323,7 @@ export const makeTranscodeClient = Effect.fn("TranscodeClient.make")(
       createSession,
       getSession,
       deleteSession,
-      warmAudio,
+      warmSession,
       masterUrl,
       relayUrl,
     } satisfies TranscodeClientShape

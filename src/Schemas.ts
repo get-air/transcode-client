@@ -46,6 +46,11 @@ export const TranscodeSession = Schema.Struct({
   master_url: Schema.String,
 })
 
+export const WarmSessionResult = Schema.Struct({
+  sequences: Schema.Array(Schema.Number),
+  elapsed_ms: Schema.Number,
+})
+
 export const RegisteredSource = Schema.Struct({
   id: Schema.UUID,
   media: Schema.Struct({
@@ -55,11 +60,6 @@ export const RegisteredSource = Schema.Struct({
     tracks: Schema.Array(MediaTrack),
   }),
   relay_url: Schema.String,
-})
-
-export const WarmAudioResult = Schema.Struct({
-  sequence: Schema.Number,
-  elapsed_ms: Schema.Number,
 })
 
 export const EncoderCandidate = Schema.Struct({

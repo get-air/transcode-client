@@ -11,7 +11,7 @@ import type {
   TranscodeClientOptions,
   TranscodeMetrics,
   TranscodeSession,
-  WarmAudioResult,
+  WarmSessionResult,
 } from "./Types.js"
 
 export interface PublicTranscodeError extends Error {
@@ -89,12 +89,13 @@ export class TranscodeClient {
     return run(this.client.deleteSession(id, options))
   }
 
-  warmAudio(
+  warmSession(
     id: string,
     positionSeconds: number,
+    bufferSeconds: number,
     options?: TranscodeCallOptions,
-  ): Promise<WarmAudioResult> {
-    return run(this.client.warmAudio(id, positionSeconds, options))
+  ): Promise<WarmSessionResult> {
+    return run(this.client.warmSession(id, positionSeconds, bufferSeconds, options))
   }
 
   masterUrl(session: Pick<TranscodeSession, "master_url">): string {

@@ -12,7 +12,6 @@ export interface TranscodeSource {
 export interface TranscodeOutputOptions {
   readonly transmux?: boolean
   readonly force_transcode?: boolean
-  readonly video_enabled?: boolean
   readonly max_width?: number
   readonly max_height?: number
   readonly video_track_index?: number
@@ -77,8 +76,8 @@ export interface TranscodeSession {
   readonly master_url: string
 }
 
-export interface WarmAudioResult {
-  readonly sequence: number
+export interface WarmSessionResult {
+  readonly sequences: readonly number[]
   readonly elapsed_ms: number
 }
 

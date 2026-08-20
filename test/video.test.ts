@@ -5,7 +5,6 @@ import { describe, expect, it, vi } from "vitest"
 import type { TranscodeSession } from "../src/Types.js"
 import {
   shouldUseNativeHls,
-  transcodeRelayHttpTransport,
   transcodeVideoBackend,
   type TranscodeSessionClient,
 } from "../src/video.js"
@@ -34,51 +33,6 @@ const session: TranscodeSession = {
 }
 
 describe("transcode video backend", () => {
-  it("relays range requests through a source-only session", async () => {
-    const registerSource = vi.fn(async () => ({
-      id: session.source_id,
-      media: { duration_ns: 8_000_000_000, seekable: true, container: "matroska", tracks: [] },
-      relay_url: `/v1/sources/${session.source_id}/relay`,
-    }))
-    const fetch = vi.fn(async (_request: Request) => new Response("range", {
-      status: 206,
-      headers: { "content-range": "bytes 10-14/100" },
-    }))
-    const transport = transcodeRelayHttpTransport({
-      origin: "http://127.0.0.1:11472",
-      registerSource,
-      releaseSource: vi.fn(async () => undefined),
-      relayUrl: (source) => new URL(source.relay_url, "http://127.0.0.1:11472").toString(),
-      createSession: vi.fn(async () => session),
-      deleteSession: vi.fn(async () => undefined),
-      warmAudio: vi.fn(async () => ({ sequence: 1, elapsed_ms: 0 })),
-      masterUrl: () => "",
-    }, { fetch })
-
-    await transport.register({
-      url: "https://media.example/movie.mkv",
-      headers: { Authorization: "Bearer test" },
-    })
-    const response = await transport.fetch(new Request("https://media.example/movie.mkv", {
-      headers: { Accept: "video/*", Authorization: "Bearer test", Range: "bytes=10-14" },
-    }))
-    await transport.fetch(new Request("https://media.example/movie.mkv", {
-      headers: { Authorization: "Bearer test", Range: "bytes=20-24" },
-    }))
-
-    expect(response.status).toBe(206)
-    expect(registerSource).toHaveBeenCalledWith({
-        url: "https://media.example/movie.mkv",
-        headers: { Authorization: "Bearer test" },
-    }, expect.any(Object))
-    expect(registerSource).toHaveBeenCalledTimes(1)
-    const relayed = vi.mocked(fetch).mock.calls[0]?.[0]
-    expect(relayed?.url).toBe(
-      `http://127.0.0.1:11472/v1/sources/${session.source_id}/relay`,
-    )
-    expect(relayed?.headers.get("range")).toBe("bytes=10-14")
-  })
-
   it("uses hls.js when native HLS cannot switch alternate audio", () => {
     const video = document.createElement("video")
     video.canPlayType = () => "probably"
@@ -98,21 +52,29 @@ describe("transcode video backend", () => {
         relay_url: `/v1/sources/${session.source_id}/relay`,
       })),
       releaseSource: vi.fn(async () => undefined),
-      relayUrl: (source) => new URL(source.relay_url, "http://127.0.0.1:11471").toString(),
       createSession: vi.fn(async () => session),
       deleteSession: vi.fn(async () => undefined),
-      warmAudio: vi.fn(async () => ({ sequence: 1, elapsed_ms: 0 })),
+      warmSession: vi.fn(async () => ({ sequences: [1, 2, 3], elapsed_ms: 0 })),
       masterUrl: () => "http://127.0.0.1:11471/v1/sessions/id/master.m3u8",
     }
     const video = document.createElement("video")
     video.canPlayType = () => "probably"
-    video.load = vi.fn(() => queueMicrotask(() =>
-      video.dispatchEvent(new Event("loadedmetadata"))))
+    video.load = vi.fn(() => queueMicrotask(() => {
+      Object.defineProperty(video, "readyState", {
+        configurable: true,
+        value: HTMLMediaElement.HAVE_FUTURE_DATA,
+      })
+      video.dispatchEvent(new Event("canplay"))
+    }))
     video.play = vi.fn(async () => undefined)
     video.pause = vi.fn()
     const nativeAudio = [{ enabled: true }, { enabled: false }]
     Object.defineProperty(video, "audioTracks", { value: nativeAudio })
-    const adapter = transcodeVideoBackend({ client, videoCodecs: ["h264"] })
+    const adapter = transcodeVideoBackend({
+      client,
+      videoCodecs: ["h264"],
+      startupBufferSeconds: 12,
+    })
 
     const controller = await adapter.open({
       element: video,
@@ -129,6 +91,7 @@ describe("transcode video backend", () => {
         hdr_formats: [],
       },
     }), {})
+    expect(client.warmSession).toHaveBeenCalledWith(session.id, 0, 12, {})
     expect(video.src).toContain("/v1/sessions/id/master.m3u8")
     expect(controller.capabilities.backend).toBe("transcode")
     expect(controller.media.durationSeconds).toBe(8)
@@ -137,5 +100,6 @@ describe("transcode video backend", () => {
     expect(controller.tracks.find((track) => track.id === "audio-2")?.selected).toBe(true)
     await controller.destroy()
     expect(client.deleteSession).toHaveBeenCalledWith(session.id)
+    expect(client.releaseSource).toHaveBeenCalledWith(session.source_id)
   })
 })

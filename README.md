@@ -103,25 +103,17 @@ Networking is injected through `@get-air/http`, including Tauri transports.
 
 ## Browser example
 
-`examples/browser` is a plain HTML URL player. It tries the regular video
-element first and uses `transcodeVideoBackend()` only after direct startup
-fails. Add `?mse=1` to force the hls.js/MSE path during qualification.
-The universal transcode adapter defaults to 1080p H.264/AAC unless the caller
-explicitly requests a larger output. Native HTML and MediaBunny remain ahead of
-it, so compatible 4K sources avoid this compatibility conversion entirely.
-The browser example also injects `transcodeRelayHttpTransport()`, which carries
-MediaBunny byte-range reads through the local server when the media origin does
-not grant browser CORS access.
-When native file playback supports a video codec that MSE and WebCodecs do not,
-the video adapter uses a hybrid fallback: the original video remains in the
-native media element while a synchronized hidden HLS element plays the server's
-AAC rendition. Seeking, playback rate, volume, and audio-track changes update
-both timelines.
-The hidden audio element loads one audio-only master for its lifetime; changing
-languages updates hls.js's `audioTrack` instead of rebuilding the player.
-Hybrid warm operations prepare every audio rendition for a requested interval.
-Full-transcode fallback sessions generate only the selected AAC rendition on
-demand so unusual multi-track remuxes do not block ordinary playback.
+`examples/browser` is a transcode-only URL player. Every source goes through
+`transcodeVideoBackend()` and emerges as browser-safe H.264/AAC CMAF HLS. The
+adapter defaults to 1080p unless the caller explicitly requests a larger output.
+Add `?mse=1` to force hls.js/MSE when qualifying a browser with native HLS.
+
+Before opening HLS, the adapter asks the server to generate a 12-second A/V
+reserve and configures hls.js to retain a larger forward buffer during
+playback. Override the reserve with `startupBufferSeconds` or the demo's
+`?buffer=SECONDS` query.
+Full-transcode sessions generate only the selected AAC rendition on demand so
+multi-track remuxes do not block ordinary playback.
 
 The qualification fixture has been exercised through both native HLS and
 hls.js: VP9/Opus MKV was converted to H.264 High plus AAC-LC, reached media

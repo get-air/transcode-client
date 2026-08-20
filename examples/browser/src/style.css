@@ -11,7 +11,7 @@ main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 48
 h1 { margin: 0; font-size: clamp(24px, 4vw, 44px); letter-spacing: -.03em; }
 .topbar p { margin: 8px 0 0; color: #aeb8c3; max-width: 62ch; }
 #backend { color: #66dfeb; font: 700 13px ui-monospace, monospace; text-transform: uppercase; }
-form { display: grid; grid-template-columns: minmax(0, 1fr) 190px 280px auto; gap: 10px; margin: 24px 0 16px; }
+form { display: grid; grid-template-columns: minmax(0, 1fr) 280px auto; gap: 10px; margin: 24px 0 16px; }
 label { display: grid; gap: 6px; color: #aeb8c3; font-size: 12px; }
 input, select, button { min-height: 46px; border: 1px solid #34404e; border-radius: 7px; font: inherit; }
 input, select { width: 100%; min-width: 0; background: #10151c; color: #f4f7f8; padding: 0 12px; }

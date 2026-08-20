@@ -3,28 +3,19 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Air playback router</title>
+    <title>Air transcode fallback</title>
   </head>
   <body>
     <main>
       <header class="topbar">
         <div>
-          <h1>Air playback router</h1>
-          <p>Paste a media URL, inspect the chosen engine, and switch its tracks.</p>
+          <h1>Air transcode fallback</h1>
+          <p>Paste any media URL. GStreamer converts it to buffered browser-safe HLS.</p>
         </div>
         <output id="backend" aria-live="polite">Idle</output>
       </header>
       <form id="source-form">
         <label class="source-field">Media URL <input id="source" type="url" autocomplete="off" required></label>
-        <label>Playback mode
-          <select id="route">
-            <option value="auto">Auto</option>
-            <option value="html">Force HTML</option>
-            <option value="mediabunny">Force MediaBunny</option>
-            <option value="transcode">Force Transcode</option>
-            <option value="hybrid">Force Hybrid</option>
-          </select>
-        </label>
         <label>Transcoder origin <input id="origin" type="url" required value="http://127.0.0.1:11472"></label>
         <button type="submit">Play URL</button>
       </form>
@@ -45,7 +36,7 @@
           </div>
         </div>
       </section>
-      <p id="status" role="status" aria-live="polite">Enter a direct media URL.</p>
+      <p id="status" role="status" aria-live="polite">Enter a media URL to transcode.</p>
       <pre id="diagnostics" aria-label="Playback diagnostics">No active session.</pre>
     </main>
     <script type="module" src="/src/main.ts"></script>

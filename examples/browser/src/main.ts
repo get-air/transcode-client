@@ -1,15 +1,9 @@
 import { TranscodeClient } from '@get-air/transcode'
+import { transcodeVideoBackend } from '@get-air/transcode/video'
 import {
-  hybridVideoBackend,
-  transcodeRelayHttpTransport,
-  transcodeVideoBackend,
-} from '@get-air/transcode/video'
-import {
-  createVideoClient,
+  type BackendVideoController,
   type MediaTrack,
   type TrackKind,
-  type VideoBackend,
-  type VideoController,
 } from '@get-air/video'
 
 import './style.css'
@@ -17,7 +11,6 @@ import './style.css'
 const form = required<HTMLFormElement>('#source-form')
 const source = required<HTMLInputElement>('#source')
 const origin = required<HTMLInputElement>('#origin')
-const route = required<HTMLSelectElement>('#route')
 const video = required<HTMLVideoElement>('#video')
 const backend = required<HTMLOutputElement>('#backend')
 const status = required<HTMLElement>('#status')
@@ -31,17 +24,19 @@ const subtitleTrack = required<HTMLSelectElement>('#subtitle-track')
 const seekField = required<HTMLElement>('#seek-field')
 const seekPosition = required<HTMLInputElement>('#seek-position')
 const seekButton = required<HTMLButtonElement>('#seek-button')
-let controller: VideoController | undefined
+let controller: BackendVideoController | undefined
 let loadSequence = 0
 let playbackSummary = 'Enter a direct media URL.'
 let transcodeClient: TranscodeClient | undefined
 let diagnosticsTimer: number | undefined
-let activeSourceId: string | undefined
 
 const parameters = new URLSearchParams(location.search)
 source.value = parameters.get('source') ?? ''
 origin.value = parameters.get('origin') ?? `http://${location.hostname}:11472`
-route.value = parameters.get('mode') ?? route.value
+const requestedBufferSeconds = Number(parameters.get('buffer') ?? 12)
+const startupBufferSeconds = Number.isFinite(requestedBufferSeconds) && requestedBufferSeconds >= 0
+  ? requestedBufferSeconds
+  : 12
 
 form.addEventListener('submit', (event) => {
   event.preventDefault()
@@ -53,54 +48,33 @@ seekButton.addEventListener('click', () => { void seekToPosition() })
 
 async function playSource(): Promise<void> {
   const sequence = ++loadSequence
-  status.textContent = 'Choosing a playback route…'
-  backend.textContent = 'Opening'
+  status.textContent = `Transcoding and buffering ${startupBufferSeconds} seconds…`
+  backend.textContent = 'Buffering'
   setBusy(true)
   hideTrackControls()
   try {
-    const previousTranscode = transcodeClient
-    const previousSourceId = activeSourceId
     await controller?.destroy()
-    if (previousTranscode && previousSourceId) {
-      await previousTranscode.releaseSource(previousSourceId).catch(() => undefined)
-    }
     controller = undefined
-    activeSourceId = undefined
     if (diagnosticsTimer !== undefined) window.clearInterval(diagnosticsTimer)
     const transcode = await TranscodeClient.connect({ origin: origin.value })
     transcodeClient = transcode
-    const relay = transcodeRelayHttpTransport(transcode)
-    activeSourceId = (await relay.register({ url: source.value })).id
-    const client = createVideoClient({
-      http: relay,
-      adapters: [
-        hybridVideoBackend({ client: transcode, relay }),
-        transcodeVideoBackend({
-          client: transcode,
-          relay,
-          preferNativeHls: parameters.get('mse') !== '1',
-        }),
-      ],
+    const adapter = transcodeVideoBackend({
+      client: transcode,
+      startupBufferSeconds,
+      preferNativeHls: parameters.get('mse') !== '1',
     })
-    controller = await client.attach(video, {
-      source: source.value,
-      backend: route.value as VideoBackend,
-      autoplay: false,
+    controller = await adapter.open({
+      element: video,
+      options: { source: source.value, backend: 'transcode', autoplay: false },
+      http: { fetch: (request) => globalThis.fetch(request) },
     })
     if (sequence !== loadSequence) {
       await controller.destroy()
       return
     }
-    const hybrid = controller.sessionId.startsWith('hybrid-')
-    backend.textContent = hybrid ? 'hybrid' : controller.capabilities.backend
+    backend.textContent = 'transcode'
     const codecs = controller.tracks.map((track) => track.codec).filter(Boolean).join(' + ')
-    playbackSummary = hybrid
-      ? `Native video + GStreamer AAC · ${codecs}`
-      : controller.capabilities.backend === 'html'
-      ? 'Direct HTML playback—the source needs no proxy or transcoding.'
-      : controller.capabilities.backend === 'mediabunny'
-        ? `MediaBunny client decode · ${codecs}`
-        : `GStreamer HLS · ${codecs}`
+    playbackSummary = `GStreamer HLS · ${codecs} · ${startupBufferSeconds}s server reserve ready`
     status.textContent = playbackSummary
     renderTrackControls(controller)
     await controller.play()
@@ -172,7 +146,7 @@ async function updateDiagnostics(): Promise<void> {
     }
     diagnostics.textContent = [
       `mode=${stats.playbackMode ?? active.capabilities.backend}`,
-      `source=${stats.sourceId ?? activeSourceId ?? 'n/a'}`,
+      `source=${stats.sourceId ?? 'n/a'}`,
       `switch_ms=${formatMetric(stats.switchLatencyMillis)}`,
       `seek_ms=${formatMetric(stats.seekLatencyMillis)}`,
       `av_drift_ms=${formatMetric(stats.avDriftMillis)}`,
@@ -197,7 +171,7 @@ function errorDetails(cause: unknown): string {
   return nested === undefined ? cause.message : `${cause.message}: ${String(nested)}`
 }
 
-function renderTrackControls(active: VideoController): void {
+function renderTrackControls(active: BackendVideoController): void {
   renderTrackSelect(
     'audio',
     audioTrack,
@@ -252,7 +226,7 @@ function hideTrackControls(): void {
 
 function setBusy(busy: boolean): void {
   submit.disabled = busy
-  submit.textContent = busy ? 'Opening…' : 'Play URL'
+  submit.textContent = busy ? 'Buffering…' : 'Play URL'
 }
 
 function required<ElementType extends Element>(selector: string): ElementType {
